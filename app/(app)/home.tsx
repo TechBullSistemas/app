@@ -1,0 +1,164 @@
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+
+import { OnlineBadge } from '@/components/OnlineBadge';
+import { useSessionStore } from '@/stores/session';
+import { logoutRequest } from '@/api/auth';
+import { countPending } from '@/db/repositories/outbox';
+
+interface MenuItem {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  href: string;
+  color: string;
+  badge?: number;
+}
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const user = useSessionStore((s) => s.user);
+  const clear = useSessionStore((s) => s.clear);
+
+  const [pending, setPending] = useState({ vendas: 0, visitas: 0 });
+
+  useEffect(() => {
+    countPending().then(setPending).catch(() => undefined);
+  }, []);
+
+  function go(href: string) {
+    router.push(href as any);
+  }
+
+  async function handleSair() {
+    Alert.alert('Sair', 'Deseja realmente sair do app?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Sair',
+        style: 'destructive',
+        onPress: async () => {
+          await logoutRequest();
+          await clear();
+          router.replace('/(auth)/login');
+        },
+      },
+    ]);
+  }
+
+  const menu: MenuItem[] = [
+    { label: 'Clientes', icon: 'people', href: '/(app)/clientes', color: '#0ea5e9' },
+    { label: 'Visitas', icon: 'walk', href: '/(app)/visitas', color: '#10b981' },
+    { label: 'Produtos', icon: 'cube', href: '/(app)/produtos', color: '#f59e0b' },
+    { label: 'Pedidos', icon: 'receipt', href: '/(app)/pedidos', color: '#8b5cf6' },
+    { label: 'Vendas', icon: 'document-text', href: '/(app)/vendas', color: '#6366f1' },
+    { label: 'Mensagens', icon: 'mail', href: '/(app)/mensagens', color: '#ec4899' },
+    { label: 'Buscar Info.', icon: 'cloud-download', href: '/(app)/sync/buscar', color: '#14b8a6' },
+    {
+      label: 'Enviar Info.',
+      icon: 'cloud-upload',
+      href: '/(app)/sync/enviar',
+      color: '#f97316',
+      badge: pending.vendas + pending.visitas,
+    },
+    { label: 'Alterar Senha', icon: 'key', href: '/(app)/senha', color: '#64748b' },
+  ];
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 16 }}>
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.hello}>Olá, {user?.nome ?? 'Representante'}</Text>
+          <Text style={styles.subtle}>Holding {user?.holdingId} • Empresa {user?.cdEmpresa}</Text>
+        </View>
+        <OnlineBadge />
+      </View>
+
+      <View style={styles.grid}>
+        {menu.map((m) => (
+          <Pressable key={m.label} style={styles.tile} onPress={() => go(m.href)}>
+            <View style={[styles.iconCircle, { backgroundColor: m.color }]}>
+              <Ionicons name={m.icon} size={28} color="#fff" />
+              {!!m.badge && m.badge > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{m.badge}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.tileLabel}>{m.label}</Text>
+          </Pressable>
+        ))}
+
+        <Pressable style={styles.tile} onPress={handleSair}>
+          <View style={[styles.iconCircle, { backgroundColor: '#dc2626' }]}>
+            <Ionicons name="exit" size={28} color="#fff" />
+          </View>
+          <Text style={styles.tileLabel}>Sair</Text>
+        </Pressable>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f1f5f9' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 14,
+    gap: 12,
+  },
+  hello: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+  subtle: { color: '#64748b', marginTop: 2, fontSize: 12 },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  tile: {
+    backgroundColor: '#fff',
+    width: '31%',
+    aspectRatio: 1,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+    elevation: 1,
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileLabel: {
+    marginTop: 8,
+    color: '#0f172a',
+    fontWeight: '600',
+    textAlign: 'center',
+    fontSize: 12,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#dc2626',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+});

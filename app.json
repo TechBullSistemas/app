@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "TechBull Vendas",
+    "slug": "techbull-vendas",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "techbullvendas",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.techbull.vendas"
+    },
+    "android": {
+      "package": "com.techbull.vendas",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "INTERNET"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permita acesso à localização para registrar visitas."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
