@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { loginRequest } from '@/api/auth';
 import { useSessionStore } from '@/stores/session';
 import { extractApiErrorMessage } from '@/api/client';
+import { getVersionLabel } from '@/config/version';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -87,6 +88,7 @@ export default function LoginScreen() {
           <Text style={styles.footer}>
             Em caso de problemas, contate o administrador da sua holding.
           </Text>
+          <Text style={styles.version}>{getVersionLabel()}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -123,4 +125,5 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   footer: { color: '#94a3b8', textAlign: 'center', fontSize: 12 },
+  version: { color: '#64748b', textAlign: 'center', fontSize: 11, marginTop: 4 },
 });

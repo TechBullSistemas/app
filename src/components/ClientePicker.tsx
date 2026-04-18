@@ -8,7 +8,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  initialWindowMetrics,
+} from 'react-native-safe-area-context';
 import { ClienteRow, listClientes } from '@/db/repositories/clientes';
 
 interface Props {
@@ -36,41 +40,43 @@ export function ClientePicker({ visible, onClose, onSelect }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Selecione o cliente</Text>
-          <Pressable onPress={onClose} hitSlop={10}>
-            <Text style={styles.close}>Fechar</Text>
-          </Pressable>
-        </View>
-        <View style={styles.searchBox}>
-          <TextInput
-            style={styles.input}
-            placeholder="Buscar cliente..."
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-            autoFocus
-          />
-        </View>
-        <FlatList
-          data={items}
-          keyExtractor={(it) => `${it.cd_cliente}-${it.holding_id}`}
-          ItemSeparatorComponent={() => <View style={styles.sep} />}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.row}
-              onPress={() => {
-                onSelect(item);
-                onClose();
-              }}
-            >
-              <Text style={styles.name}>{item.nome}</Text>
-              <Text style={styles.sub}>{item.cpf_cnpj || '—'}</Text>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Selecione o cliente</Text>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Text style={styles.close}>Fechar</Text>
             </Pressable>
-          )}
-        />
-      </SafeAreaView>
+          </View>
+          <View style={styles.searchBox}>
+            <TextInput
+              style={styles.input}
+              placeholder="Buscar cliente..."
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
+              autoFocus
+            />
+          </View>
+          <FlatList
+            data={items}
+            keyExtractor={(it) => `${it.cd_cliente}-${it.holding_id}`}
+            ItemSeparatorComponent={() => <View style={styles.sep} />}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.row}
+                onPress={() => {
+                  onSelect(item);
+                  onClose();
+                }}
+              >
+                <Text style={styles.name}>{item.nome}</Text>
+                <Text style={styles.sub}>{item.cpf_cnpj || '—'}</Text>
+              </Pressable>
+            )}
+          />
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

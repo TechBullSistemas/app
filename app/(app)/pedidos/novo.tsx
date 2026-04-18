@@ -8,14 +8,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
 import { ClientePicker } from '@/components/ClientePicker';
 import { ProdutoPicker } from '@/components/ProdutoPicker';
-import { ClienteRow } from '@/db/repositories/clientes';
+import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
 import { ProdutoRow } from '@/db/repositories/produtos';
 import { getDb } from '@/db/database';
 import { useSessionStore } from '@/stores/session';
@@ -55,6 +55,9 @@ function isoDate(d: Date) {
 export default function NovoPedido() {
   const router = useRouter();
   const user = useSessionStore((s) => s.user);
+  const params = useLocalSearchParams<{ cd_cliente?: string; holding_id?: string }>();
+  const preCdCliente = params.cd_cliente ? Number(params.cd_cliente) : null;
+  const preHoldingId = params.holding_id ? Number(params.holding_id) : null;
 
   const [cliPickerOpen, setCliPickerOpen] = useState(false);
   const [prodPickerOpen, setProdPickerOpen] = useState(false);
@@ -90,6 +93,15 @@ export default function NovoPedido() {
       if (cs.length === 1) setCdCondicao(cs[0].cd_condicao);
     })();
   }, []);
+
+  useEffect(() => {
+    if (preCdCliente && preHoldingId) {
+      (async () => {
+        const c = await getClienteById(preCdCliente, preHoldingId);
+        if (c) setCliente(c);
+      })();
+    }
+  }, [preCdCliente, preHoldingId]);
 
   const condicaoSel = useMemo(
     () => condicoes.find((c) => c.cd_condicao === cdCondicao) || null,

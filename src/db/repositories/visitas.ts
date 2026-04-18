@@ -111,3 +111,52 @@ export async function listVisitasCliente(cdCliente: number, holdingId: number) {
     [cdCliente, holdingId],
   );
 }
+
+export async function getVisitaByClientId(clientId: string) {
+  const db = await getDb();
+  return db.getFirstAsync<VisitaRow>(
+    'SELECT * FROM visita WHERE client_id = ?',
+    [clientId],
+  );
+}
+
+export async function updateVisitaLocal(
+  clientId: string,
+  patch: {
+    idComprou: boolean;
+    motivoNaoComprou?: string | null;
+    observacao?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    dtVisita?: string;
+  },
+) {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE visita
+       SET id_comprou = ?,
+           motivo_nao_comprou = ?,
+           observacao = ?,
+           latitude = ?,
+           longitude = ?,
+           dt_visita = COALESCE(?, dt_visita)
+     WHERE client_id = ? AND origem = 'local'`,
+    [
+      patch.idComprou ? 1 : 0,
+      patch.motivoNaoComprou ?? null,
+      patch.observacao ?? null,
+      patch.latitude ?? null,
+      patch.longitude ?? null,
+      patch.dtVisita ?? null,
+      clientId,
+    ],
+  );
+}
+
+export async function deleteVisitaLocal(clientId: string) {
+  const db = await getDb();
+  await db.runAsync(
+    "DELETE FROM visita WHERE client_id = ? AND origem = 'local'",
+    [clientId],
+  );
+}

@@ -9,6 +9,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useSessionStore } from '@/stores/session';
 import { useOnlineStore } from '@/stores/online';
 import { getDb } from '@/db/database';
+import { checkAndApplyUpdate } from '@/services/updates';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +29,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     hydrate();
     getDb().catch((err) => console.error('Falha ao abrir DB:', err));
     useOnlineStore.getState().init();
+    if (!__DEV__) {
+      checkAndApplyUpdate({ silent: false }).catch(() => undefined);
+    }
   }, [hydrate]);
 
   useEffect(() => {

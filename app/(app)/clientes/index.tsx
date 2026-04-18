@@ -52,23 +52,38 @@ export default function ClientesScreen() {
           keyExtractor={(it) => `${it.cd_cliente}-${it.holding_id}`}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListEmptyComponent={<Text style={styles.empty}>Nenhum cliente encontrado.</Text>}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.row}
-              onPress={() =>
-                router.push({
-                  pathname: '/(app)/clientes/[id]',
-                  params: { id: String(item.cd_cliente), h: String(item.holding_id) },
-                })
-              }
-            >
-              <Text style={styles.name}>{item.nome ?? '(sem nome)'}</Text>
-              <Text style={styles.sub}>
-                {item.cpf_cnpj || '—'} • {item.tp_pessoa || ''}
-              </Text>
-              {item.celular ? <Text style={styles.sub}>{item.celular}</Text> : null}
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const enderecoLine = [
+              item.endereco,
+              item.numero,
+              item.bairro,
+            ]
+              .filter(Boolean)
+              .join(', ');
+            const cidadeLine = item.cidade_nome
+              ? `${item.cidade_nome}${item.estado ? `/${item.estado}` : ''}`
+              : null;
+            return (
+              <Pressable
+                style={styles.row}
+                onPress={() =>
+                  router.push({
+                    pathname: '/(app)/clientes/[id]',
+                    params: { id: String(item.cd_cliente), h: String(item.holding_id) },
+                  })
+                }
+              >
+                <Text style={styles.name}>{item.nome ?? '(sem nome)'}</Text>
+                <Text style={styles.sub}>
+                  {item.cpf_cnpj || '—'}
+                  {item.tp_pessoa ? ` • ${item.tp_pessoa}` : ''}
+                </Text>
+                {enderecoLine ? <Text style={styles.sub}>{enderecoLine}</Text> : null}
+                {cidadeLine ? <Text style={styles.sub}>{cidadeLine}</Text> : null}
+                {item.celular ? <Text style={styles.sub}>📱 {item.celular}</Text> : null}
+              </Pressable>
+            );
+          }}
         />
       )}
     </View>

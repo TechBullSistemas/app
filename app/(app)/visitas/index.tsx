@@ -68,28 +68,46 @@ export default function VisitasScreen() {
           keyExtractor={(it, i) => `${it.client_id ?? it.cd_visita ?? i}`}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListEmptyComponent={<Text style={styles.empty}>Nenhuma visita registrada.</Text>}
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>
-                  {item.clienteNome ?? `Cliente #${item.cd_cliente}`}
-                </Text>
-                <Text style={styles.sub}>{fmtDate(item.dt_visita)}</Text>
-                <Text style={[styles.sub, { color: item.id_comprou ? '#16a34a' : '#dc2626' }]}>
-                  {item.id_comprou ? 'Comprou' : 'Não comprou'}
-                </Text>
-                {item.motivo_nao_comprou ? (
-                  <Text style={styles.sub}>Motivo: {item.motivo_nao_comprou}</Text>
-                ) : null}
-                {item.observacao ? <Text style={styles.sub}>{item.observacao}</Text> : null}
-              </View>
-              {item.origem === 'local' ? (
-                <View style={styles.tag}>
-                  <Text style={styles.tagText}>Pendente</Text>
+          renderItem={({ item }) => {
+            const podeEditar = item.origem === 'local' && !!item.client_id;
+            const Wrapper: any = podeEditar ? Pressable : View;
+            return (
+              <Wrapper
+                style={styles.row}
+                onPress={
+                  podeEditar
+                    ? () =>
+                        router.push({
+                          pathname: '/(app)/visitas/[clientId]',
+                          params: { clientId: item.client_id! },
+                        })
+                    : undefined
+                }
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>
+                    {item.clienteNome ?? `Cliente #${item.cd_cliente}`}
+                  </Text>
+                  <Text style={styles.sub}>{fmtDate(item.dt_visita)}</Text>
+                  <Text style={[styles.sub, { color: item.id_comprou ? '#16a34a' : '#dc2626' }]}>
+                    {item.id_comprou ? 'Comprou' : 'Não comprou'}
+                  </Text>
+                  {item.motivo_nao_comprou ? (
+                    <Text style={styles.sub}>Motivo: {item.motivo_nao_comprou}</Text>
+                  ) : null}
+                  {item.observacao ? <Text style={styles.sub}>{item.observacao}</Text> : null}
                 </View>
-              ) : null}
-            </View>
-          )}
+                {item.origem === 'local' ? (
+                  <View style={styles.tag}>
+                    <Text style={styles.tagText}>Pendente</Text>
+                  </View>
+                ) : null}
+                {podeEditar ? (
+                  <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                ) : null}
+              </Wrapper>
+            );
+          }}
         />
       )}
     </View>

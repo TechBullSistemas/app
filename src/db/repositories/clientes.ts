@@ -18,6 +18,8 @@ export interface ClienteRow {
   cd_vendedor: number | null;
   id_ativo: number;
   raw_json: string | null;
+  cidade_nome?: string | null;
+  estado?: number | null;
 }
 
 export async function bulkInsertClientes(items: any[], holdingIdFallback?: number) {
@@ -59,24 +61,33 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
   });
 }
 
+const SELECT_CLIENTE_COM_CIDADE = `
+  SELECT c.*, ci.nome AS cidade_nome, ci.cd_estado AS estado
+  FROM cliente c
+  LEFT JOIN cidade ci ON ci.cd_cidade = c.cd_cidade
+`;
+
 export async function listClientes(search?: string, limit = 100): Promise<ClienteRow[]> {
   const db = await getDb();
   if (search && search.trim()) {
     const like = `%${search.trim()}%`;
     return db.getAllAsync<ClienteRow>(
-      `SELECT * FROM cliente
-       WHERE nome LIKE ? OR razao_social LIKE ? OR cpf_cnpj LIKE ?
-       ORDER BY nome LIMIT ?`,
+      `${SELECT_CLIENTE_COM_CIDADE}
+       WHERE c.nome LIKE ? OR c.razao_social LIKE ? OR c.cpf_cnpj LIKE ?
+       ORDER BY c.nome LIMIT ?`,
       [like, like, like, limit],
     );
   }
-  return db.getAllAsync<ClienteRow>('SELECT * FROM cliente ORDER BY nome LIMIT ?', [limit]);
+  return db.getAllAsync<ClienteRow>(
+    `${SELECT_CLIENTE_COM_CIDADE} ORDER BY c.nome LIMIT ?`,
+    [limit],
+  );
 }
 
 export async function getClienteById(cdCliente: number, holdingId: number) {
   const db = await getDb();
   return db.getFirstAsync<ClienteRow>(
-    'SELECT * FROM cliente WHERE cd_cliente = ? AND holding_id = ?',
+    `${SELECT_CLIENTE_COM_CIDADE} WHERE c.cd_cliente = ? AND c.holding_id = ?`,
     [cdCliente, holdingId],
   );
 }

@@ -14,6 +14,8 @@ import { OnlineBadge } from '@/components/OnlineBadge';
 import { useSessionStore } from '@/stores/session';
 import { logoutRequest } from '@/api/auth';
 import { countPending } from '@/db/repositories/outbox';
+import { getAppVersion, getVersionLabel } from '@/config/version';
+import { checkAndApplyUpdate, isUpdatesEnabled } from '@/services/updates';
 
 interface MenuItem {
   label: string;
@@ -29,10 +31,36 @@ export default function HomeScreen() {
   const clear = useSessionStore((s) => s.clear);
 
   const [pending, setPending] = useState({ vendas: 0, visitas: 0 });
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const versionInfo = getAppVersion();
+  const versionLabel = getVersionLabel();
+  const updatesEnabled = isUpdatesEnabled();
 
   useEffect(() => {
     countPending().then(setPending).catch(() => undefined);
   }, []);
+
+  async function handleCheckUpdate() {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    try {
+      const r = await checkAndApplyUpdate({ silent: false });
+      if (r === 'no-module') {
+        Alert.alert(
+          'Atualização',
+          'O módulo de atualizações não está habilitado nesta build.',
+        );
+      } else if (r === 'disabled') {
+        Alert.alert('Atualização', 'Atualizações OTA estão desabilitadas.');
+      } else if (r === 'no-update') {
+        Alert.alert('Atualização', 'Você já está na versão mais recente.');
+      } else if (r === 'error') {
+        Alert.alert('Atualização', 'Não foi possível verificar agora.');
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
 
   function go(href: string) {
     router.push(href as any);
@@ -103,6 +131,29 @@ export default function HomeScreen() {
           <Text style={styles.tileLabel}>Sair</Text>
         </Pressable>
       </View>
+
+      <Pressable style={styles.versionBox} onPress={handleCheckUpdate}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.versionLabel}>{versionLabel}</Text>
+          <Text style={styles.versionSub}>
+            {versionInfo.platform.toUpperCase()}
+            {versionInfo.runtimeVersion ? ` • runtime ${versionInfo.runtimeVersion}` : ''}
+            {versionInfo.channel ? ` • ${versionInfo.channel}` : ''}
+          </Text>
+          {updatesEnabled ? (
+            <Text style={styles.versionHint}>
+              {checkingUpdate ? 'Verificando atualização...' : 'Toque para verificar atualização'}
+            </Text>
+          ) : (
+            <Text style={styles.versionHint}>OTA desabilitado nesta build</Text>
+          )}
+        </View>
+        <Ionicons
+          name={checkingUpdate ? 'sync' : 'cloud-download-outline'}
+          size={20}
+          color="#64748b"
+        />
+      </Pressable>
     </ScrollView>
   );
 }
@@ -161,4 +212,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  versionBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    gap: 10,
+  },
+  versionLabel: { color: '#0f172a', fontWeight: '700' },
+  versionSub: { color: '#64748b', fontSize: 11, marginTop: 2 },
+  versionHint: { color: '#2563eb', fontSize: 11, marginTop: 2, fontWeight: '600' },
 });

@@ -85,6 +85,19 @@ export async function listOutboxVendas(): Promise<OutboxVendaRow[]> {
   return db.getAllAsync<OutboxVendaRow>('SELECT * FROM outbox_venda ORDER BY created_at');
 }
 
+export async function listOutboxVendasByCliente(
+  cdCliente: number,
+  holdingId: number,
+): Promise<OutboxVendaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<OutboxVendaRow>(
+    `SELECT * FROM outbox_venda
+     WHERE cd_cliente = ? AND holding_id = ?
+     ORDER BY created_at DESC`,
+    [cdCliente, holdingId],
+  );
+}
+
 export async function listOutboxVisitas(): Promise<OutboxVisitaRow[]> {
   const db = await getDb();
   return db.getAllAsync<OutboxVisitaRow>('SELECT * FROM outbox_visita ORDER BY created_at');
@@ -129,6 +142,23 @@ export async function setOutboxVendaStatus(
       clientId,
     ],
   );
+}
+
+export async function updateOutboxVisitaPayload(clientId: string, payload: any) {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE outbox_visita
+       SET payload = ?,
+           status = 'pending',
+           last_error = NULL
+     WHERE client_id = ?`,
+    [JSON.stringify(payload), clientId],
+  );
+}
+
+export async function deleteOutboxVisita(clientId: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM outbox_visita WHERE client_id = ?', [clientId]);
 }
 
 export async function setOutboxVisitaStatus(

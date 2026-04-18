@@ -9,7 +9,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  initialWindowMetrics,
+} from 'react-native-safe-area-context';
 import { listProdutos, ProdutoRow } from '@/db/repositories/produtos';
 
 interface Props {
@@ -37,59 +41,61 @@ export function ProdutoPicker({ visible, onClose, onSelect }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Selecione o produto</Text>
-          <Pressable onPress={onClose} hitSlop={10}>
-            <Text style={styles.close}>Fechar</Text>
-          </Pressable>
-        </View>
-        <View style={styles.searchBox}>
-          <TextInput
-            style={styles.input}
-            placeholder="Buscar produto..."
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-            autoFocus
-          />
-        </View>
-        <FlatList
-          data={items}
-          keyExtractor={(it) => `${it.cd_produto}-${it.holding_id}`}
-          ItemSeparatorComponent={() => <View style={styles.sep} />}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.row}
-              onPress={() => {
-                onSelect(item);
-                onClose();
-              }}
-            >
-              {item.foto_local || item.foto_url ? (
-                <Image
-                  source={{ uri: (item.foto_local || item.foto_url) as string }}
-                  style={styles.thumb}
-                />
-              ) : (
-                <View style={[styles.thumb, styles.thumbEmpty]} />
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.descricao}</Text>
-                <Text style={styles.sub}>
-                  Ref: {item.referencia || '—'} • Estoque: {item.qt_disponivel ?? 0}
-                </Text>
-                <Text style={styles.price}>
-                  {(item.vl_venda ?? 0).toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL',
-                  })}
-                </Text>
-              </View>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+            <View style={styles.header}>
+            <Text style={styles.title}>Selecione o produto</Text>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Text style={styles.close}>Fechar</Text>
             </Pressable>
-          )}
-        />
-      </SafeAreaView>
+          </View>
+          <View style={styles.searchBox}>
+            <TextInput
+              style={styles.input}
+              placeholder="Buscar produto..."
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
+              autoFocus
+            />
+          </View>
+          <FlatList
+            data={items}
+            keyExtractor={(it) => `${it.cd_produto}-${it.holding_id}`}
+            ItemSeparatorComponent={() => <View style={styles.sep} />}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.row}
+                onPress={() => {
+                  onSelect(item);
+                  onClose();
+                }}
+              >
+                {item.foto_local || item.foto_url ? (
+                  <Image
+                    source={{ uri: (item.foto_local || item.foto_url) as string }}
+                    style={styles.thumb}
+                  />
+                ) : (
+                  <View style={[styles.thumb, styles.thumbEmpty]} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{item.descricao}</Text>
+                  <Text style={styles.sub}>
+                    Ref: {item.referencia || '—'} • Estoque: {item.qt_disponivel ?? 0}
+                  </Text>
+                  <Text style={styles.price}>
+                    {(item.vl_venda ?? 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </Text>
+                </View>
+              </Pressable>
+            )}
+          />
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
