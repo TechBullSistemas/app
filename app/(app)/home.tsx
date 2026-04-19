@@ -30,7 +30,7 @@ export default function HomeScreen() {
   const user = useSessionStore((s) => s.user);
   const clear = useSessionStore((s) => s.clear);
 
-  const [pending, setPending] = useState({ vendas: 0, visitas: 0 });
+  const [pending, setPending] = useState({ vendas: 0, visitas: 0, clientes: 0 });
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const versionInfo = getAppVersion();
   const versionLabel = getVersionLabel();
@@ -94,7 +94,7 @@ export default function HomeScreen() {
       icon: 'cloud-upload',
       href: '/(app)/sync/enviar',
       color: '#f97316',
-      badge: pending.vendas + pending.visitas,
+      badge: pending.vendas + pending.visitas + pending.clientes,
     },
     { label: 'Alterar Senha', icon: 'key', href: '/(app)/senha', color: '#64748b' },
   ];
@@ -104,7 +104,9 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.hello}>Olá, {user?.nome ?? 'Representante'}</Text>
-          <Text style={styles.subtle}>Holding {user?.holdingId} • Empresa {user?.cdEmpresa}</Text>
+          {user?.holdingName ? (
+            <Text style={styles.subtle}>{user.holdingName}</Text>
+          ) : null}
         </View>
         <OnlineBadge />
       </View>

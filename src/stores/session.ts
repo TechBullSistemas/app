@@ -11,6 +11,7 @@ export interface SessionUser {
   nome: string;
   email?: string | null;
   idAtivo?: boolean;
+  holdingName?: string | null;
 }
 
 interface SessionState {

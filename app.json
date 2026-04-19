@@ -3,7 +3,7 @@
     "name": "TechBull Vendas",
     "slug": "techbull-vendas",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "scheme": "techbullvendas",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,

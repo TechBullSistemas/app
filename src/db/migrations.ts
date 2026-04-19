@@ -239,10 +239,51 @@ CREATE TABLE IF NOT EXISTS outbox_visita (
   created_at TEXT NOT NULL,
   sent_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS outbox_cliente (
+  client_id TEXT PRIMARY KEY,
+  cd_cliente_local INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  sent_at TEXT,
+  cd_cliente_remoto INTEGER
+);
 `;
+
+interface ColumnInfo {
+  name: string;
+}
+
+async function ensureColumn(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  ddl: string,
+) {
+  const cols = await db.getAllAsync<ColumnInfo>(`PRAGMA table_info(${table})`);
+  if (!cols.some((c) => c.name === column)) {
+    await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${ddl};`);
+  }
+}
 
 export async function runMigrations(db: SQLite.SQLiteDatabase) {
   await db.execAsync(SCHEMA);
+  // Migrações aditivas idempotentes para clientes locais
+  await ensureColumn(db, 'cliente', 'client_id', 'client_id TEXT');
+  await ensureColumn(db, 'cliente', 'origem', "origem TEXT DEFAULT 'remoto'");
+  await ensureColumn(
+    db,
+    'cliente',
+    'pending_sync',
+    'pending_sync INTEGER DEFAULT 0',
+  );
+  await db.execAsync(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_cliente_client_id ON cliente(client_id) WHERE client_id IS NOT NULL;`,
+  );
 }
 
 const TABLES = [
@@ -272,7 +313,14 @@ const TABLES = [
 export async function clearSyncTables(db: SQLite.SQLiteDatabase) {
   await db.withTransactionAsync(async () => {
     for (const t of TABLES) {
-      await db.execAsync(`DELETE FROM ${t};`);
+      if (t === 'cliente') {
+        // Preserva clientes cadastrados offline ainda não sincronizados
+        await db.execAsync(
+          `DELETE FROM cliente WHERE origem IS NULL OR origem <> 'local' OR pending_sync = 0;`,
+        );
+      } else {
+        await db.execAsync(`DELETE FROM ${t};`);
+      }
     }
   });
 }

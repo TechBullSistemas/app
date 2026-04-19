@@ -30,6 +30,19 @@ export interface OutboxVisitaRow {
   sent_at: string | null;
 }
 
+export interface OutboxClienteRow {
+  client_id: string;
+  cd_cliente_local: number;
+  holding_id: number;
+  payload: string;
+  status: OutboxStatus;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  sent_at: string | null;
+  cd_cliente_remoto: number | null;
+}
+
 export async function enqueueVenda(item: {
   clientId: string;
   cdCliente: number;
@@ -78,6 +91,39 @@ export async function enqueueVisita(item: {
       now,
     ],
   );
+}
+
+export async function updateOutboxVendaPayload(
+  clientId: string,
+  payload: any,
+  vlTotal: number | null,
+) {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE outbox_venda
+       SET payload = ?,
+           vl_total = ?,
+           status = 'pending',
+           last_error = NULL
+     WHERE client_id = ?`,
+    [JSON.stringify(payload), vlTotal, clientId],
+  );
+}
+
+export async function deleteOutboxVenda(clientId: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM outbox_venda WHERE client_id = ?', [clientId]);
+}
+
+export async function getOutboxVenda(
+  clientId: string,
+): Promise<OutboxVendaRow | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<OutboxVendaRow>(
+    'SELECT * FROM outbox_venda WHERE client_id = ?',
+    [clientId],
+  );
+  return row ?? null;
 }
 
 export async function listOutboxVendas(): Promise<OutboxVendaRow[]> {
@@ -179,7 +225,86 @@ export async function setOutboxVisitaStatus(
   );
 }
 
-export async function countPending(): Promise<{ vendas: number; visitas: number }> {
+export async function enqueueCliente(item: {
+  clientId: string;
+  cdClienteLocal: number;
+  holdingId: number;
+  payload: any;
+}) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO outbox_cliente
+     (client_id, cd_cliente_local, holding_id, payload, status, attempts, last_error, created_at)
+     VALUES (?, ?, ?, ?, 'pending', 0, NULL, ?)`,
+    [
+      item.clientId,
+      item.cdClienteLocal,
+      item.holdingId,
+      JSON.stringify(item.payload),
+      now,
+    ],
+  );
+}
+
+export async function updateOutboxClientePayload(clientId: string, payload: any) {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE outbox_cliente
+       SET payload = ?,
+           status = 'pending',
+           last_error = NULL
+     WHERE client_id = ?`,
+    [JSON.stringify(payload), clientId],
+  );
+}
+
+export async function listOutboxClientes(): Promise<OutboxClienteRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<OutboxClienteRow>(
+    'SELECT * FROM outbox_cliente ORDER BY created_at',
+  );
+}
+
+export async function listPendingClientes(): Promise<OutboxClienteRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<OutboxClienteRow>(
+    "SELECT * FROM outbox_cliente WHERE status IN ('pending','error') ORDER BY created_at",
+  );
+}
+
+export async function setOutboxClienteStatus(
+  clientId: string,
+  status: OutboxStatus,
+  patch?: { lastError?: string | null; cdClienteRemoto?: number | null },
+) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `UPDATE outbox_cliente
+       SET status = ?,
+           attempts = attempts + CASE WHEN ? IN ('pending','sending') THEN 0 ELSE 1 END,
+           last_error = ?,
+           sent_at = CASE WHEN ? = 'sent' THEN ? ELSE sent_at END,
+           cd_cliente_remoto = COALESCE(?, cd_cliente_remoto)
+     WHERE client_id = ?`,
+    [
+      status,
+      status,
+      patch?.lastError ?? null,
+      status,
+      now,
+      patch?.cdClienteRemoto ?? null,
+      clientId,
+    ],
+  );
+}
+
+export async function countPending(): Promise<{
+  vendas: number;
+  visitas: number;
+  clientes: number;
+}> {
   const db = await getDb();
   const v = await db.getFirstAsync<{ c: number }>(
     "SELECT COUNT(*) as c FROM outbox_venda WHERE status IN ('pending','error')",
@@ -187,5 +312,8 @@ export async function countPending(): Promise<{ vendas: number; visitas: number 
   const x = await db.getFirstAsync<{ c: number }>(
     "SELECT COUNT(*) as c FROM outbox_visita WHERE status IN ('pending','error')",
   );
-  return { vendas: v?.c ?? 0, visitas: x?.c ?? 0 };
+  const c = await db.getFirstAsync<{ c: number }>(
+    "SELECT COUNT(*) as c FROM outbox_cliente WHERE status IN ('pending','error')",
+  );
+  return { vendas: v?.c ?? 0, visitas: x?.c ?? 0, clientes: c?.c ?? 0 };
 }

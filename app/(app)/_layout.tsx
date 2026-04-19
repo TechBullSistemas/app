@@ -12,6 +12,8 @@ export default function AppLayout() {
       <Stack.Screen name="home" options={{ title: 'TechBull Vendas' }} />
       <Stack.Screen name="clientes/index" options={{ title: 'Clientes' }} />
       <Stack.Screen name="clientes/[id]" options={{ title: 'Cliente' }} />
+      <Stack.Screen name="clientes/novo" options={{ title: 'Novo Cliente' }} />
+      <Stack.Screen name="clientes/editar/[id]" options={{ title: 'Editar Cliente' }} />
       <Stack.Screen name="produtos/index" options={{ title: 'Produtos' }} />
       <Stack.Screen name="produtos/[id]" options={{ title: 'Produto' }} />
       <Stack.Screen name="visitas/index" options={{ title: 'Visitas' }} />
@@ -22,6 +24,7 @@ export default function AppLayout() {
       <Stack.Screen name="pedidos/index" options={{ title: 'Consulta de Pedidos' }} />
       <Stack.Screen name="pedidos/[clientId]" options={{ title: 'Pedido' }} />
       <Stack.Screen name="pedidos/novo" options={{ title: 'Novo Pedido' }} />
+      <Stack.Screen name="pedidos/editar/[clientId]" options={{ title: 'Editar Pedido' }} />
       <Stack.Screen name="visitas/[clientId]" options={{ title: 'Editar Visita' }} />
       <Stack.Screen name="mensagens/index" options={{ title: 'Mensagens' }} />
       <Stack.Screen name="senha" options={{ title: 'Alterar Senha' }} />

@@ -12,7 +12,7 @@ export interface EntityProgress {
 
 export interface UploadItemProgress {
   clientId: string;
-  kind: 'venda' | 'visita';
+  kind: 'venda' | 'visita' | 'cliente';
   label: string;
   status: 'pending' | 'sending' | 'sent' | 'error';
   message?: string | null;

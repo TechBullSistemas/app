@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { getDb } from '@/db/database';
 
 interface NotaItem {
@@ -33,6 +36,7 @@ function fmtDate(v: string | null | undefined) {
 }
 
 export default function VendasScreen() {
+  const router = useRouter();
   const [items, setItems] = useState<NotaItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -63,21 +67,35 @@ export default function VendasScreen() {
       ItemSeparatorComponent={() => <View style={styles.sep} />}
       ListEmptyComponent={<Text style={styles.empty}>Nenhuma venda registrada.</Text>}
       renderItem={({ item }) => (
-        <View style={styles.row}>
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          onPress={() =>
+            router.push({
+              pathname: '/(app)/vendas/[id]',
+              params: {
+                id: String(item.cd_nota),
+                e: String(item.cd_empresa),
+                h: String(item.holding_id),
+              },
+            })
+          }
+        >
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>NF {item.cd_nota}</Text>
             <Text style={styles.sub}>{item.cliente_nome ?? `Cliente #${item.cd_cliente}`}</Text>
             <Text style={styles.sub}>{fmtDate(item.dt_emissao)}</Text>
           </View>
           <Text style={styles.value}>{fmtMoney(item.vl_total)}</Text>
-        </View>
+          <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+        </Pressable>
       )}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', padding: 14, gap: 12, alignItems: 'center' },
+  row: { flexDirection: 'row', padding: 14, gap: 12, alignItems: 'center', backgroundColor: '#fff' },
+  rowPressed: { backgroundColor: '#f1f5f9' },
   sep: { height: 1, backgroundColor: '#e2e8f0' },
   name: { fontWeight: '700', color: '#0f172a' },
   sub: { color: '#64748b', fontSize: 12, marginTop: 2 },

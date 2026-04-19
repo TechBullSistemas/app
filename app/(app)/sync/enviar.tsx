@@ -13,7 +13,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSyncStore, UploadItemProgress } from '@/stores/sync';
 import { runUploadSync } from '@/sync/upload';
 import { useOnlineStore } from '@/stores/online';
-import { listOutboxVendas, listOutboxVisitas } from '@/db/repositories/outbox';
+import {
+  listOutboxClientes,
+  listOutboxVendas,
+  listOutboxVisitas,
+} from '@/db/repositories/outbox';
 
 export default function EnviarInformacoesScreen() {
   const isOnline = useOnlineStore((s) => s.isOnline);
@@ -21,34 +25,33 @@ export default function EnviarInformacoesScreen() {
   const [pending, setPending] = useState<UploadItemProgress[]>([]);
 
   async function refresh() {
-    const [vs, vis] = await Promise.all([listOutboxVendas(), listOutboxVisitas()]);
+    const [cs, vs, vis] = await Promise.all([
+      listOutboxClientes(),
+      listOutboxVendas(),
+      listOutboxVisitas(),
+    ]);
+    const norm = (s: string): UploadItemProgress['status'] =>
+      s === 'sent' ? 'sent' : s === 'sending' ? 'sending' : s === 'error' ? 'error' : 'pending';
     const items: UploadItemProgress[] = [
+      ...cs.map<UploadItemProgress>((c) => ({
+        clientId: c.client_id,
+        kind: 'cliente',
+        label: `Cliente novo • ${c.cd_cliente_local}`,
+        status: norm(c.status),
+        message: c.last_error,
+      })),
       ...vs.map<UploadItemProgress>((v) => ({
         clientId: v.client_id,
         kind: 'venda',
         label: `Venda • Cliente ${v.cd_cliente}`,
-        status:
-          v.status === 'sent'
-            ? 'sent'
-            : v.status === 'sending'
-              ? 'sending'
-              : v.status === 'error'
-                ? 'error'
-                : 'pending',
+        status: norm(v.status),
         message: v.last_error,
       })),
       ...vis.map<UploadItemProgress>((v) => ({
         clientId: v.client_id,
         kind: 'visita',
         label: `Visita • Cliente ${v.cd_cliente}`,
-        status:
-          v.status === 'sent'
-            ? 'sent'
-            : v.status === 'sending'
-              ? 'sending'
-              : v.status === 'error'
-                ? 'error'
-                : 'pending',
+        status: norm(v.status),
         message: v.last_error,
       })),
     ];
@@ -66,11 +69,20 @@ export default function EnviarInformacoesScreen() {
     }
     try {
       const r = await runUploadSync();
-      Alert.alert('Envio concluído', `Vendas: ${r.vendas} • Visitas: ${r.visitas}`);
+      Alert.alert(
+        'Envio concluído',
+        `Clientes: ${r.clientes} • Vendas: ${r.vendas} • Visitas: ${r.visitas}`,
+      );
       refresh();
     } catch (err) {
       console.error(err);
     }
+  }
+
+  function kindLabel(kind: UploadItemProgress['kind']): string {
+    if (kind === 'venda') return 'Pedido';
+    if (kind === 'visita') return 'Visita';
+    return 'Cliente';
   }
 
   const list = uploadItems.length > 0 ? uploadItems : pending;
@@ -111,7 +123,7 @@ export default function EnviarInformacoesScreen() {
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowLabel}>{item.label}</Text>
-              <Text style={styles.rowSub}>{item.kind === 'venda' ? 'Pedido' : 'Visita'}</Text>
+              <Text style={styles.rowSub}>{kindLabel(item.kind)}</Text>
               {item.message ? <Text style={styles.error}>{item.message}</Text> : null}
             </View>
             <StatusIcon status={item.status} />

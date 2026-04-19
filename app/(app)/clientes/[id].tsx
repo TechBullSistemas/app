@@ -11,7 +11,22 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
+import { ClienteRow, getClienteById, isClienteEditavel } from '@/db/repositories/clientes';
+
+function fmtCpfCnpj(raw: string | null | undefined) {
+  if (!raw) return '';
+  const d = raw.replace(/\D/g, '');
+  if (d.length === 11) {
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  }
+  if (d.length === 14) {
+    return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(
+      8,
+      12,
+    )}-${d.slice(12)}`;
+  }
+  return raw;
+}
 import {
   listNotasByCliente,
   listProdutosCompradosCliente,
@@ -130,13 +145,37 @@ export default function ClienteDetalhe() {
   return (
     <View style={styles.container}>
       <View style={styles.headerCard}>
-        <Text style={styles.titulo}>{cli.nome}</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.titulo}>{cli.nome}</Text>
+          {isClienteEditavel(cli) ? (
+            <View style={styles.chipPendente}>
+              <Ionicons name="cloud-upload-outline" size={11} color="#92400e" />
+              <Text style={styles.chipPendenteText}>Pendente envio</Text>
+            </View>
+          ) : null}
+        </View>
         {cli.razao_social ? <Text style={styles.subtle}>{cli.razao_social}</Text> : null}
-        <Text style={styles.subtle}>{cli.cpf_cnpj || '—'}</Text>
-        <Pressable style={styles.tirarBtn} onPress={tirarPedido}>
-          <Ionicons name="cart" size={18} color="#fff" />
-          <Text style={styles.tirarBtnText}>Tirar Pedido</Text>
-        </Pressable>
+        <Text style={styles.subtle}>{fmtCpfCnpj(cli.cpf_cnpj) || '—'}</Text>
+        <View style={styles.headerActions}>
+          <Pressable style={styles.tirarBtn} onPress={tirarPedido}>
+            <Ionicons name="cart" size={18} color="#fff" />
+            <Text style={styles.tirarBtnText}>Tirar Pedido</Text>
+          </Pressable>
+          {isClienteEditavel(cli) ? (
+            <Pressable
+              style={styles.editBtn}
+              onPress={() =>
+                router.push({
+                  pathname: '/(app)/clientes/editar/[id]',
+                  params: { id: String(cdCliente), h: String(holdingId) },
+                })
+              }
+            >
+              <Ionicons name="create-outline" size={18} color="#1e3a8a" />
+              <Text style={styles.editBtnText}>Editar</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.tabsRow}>
@@ -356,10 +395,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: '#e2e8f0',
   },
-  titulo: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  titulo: { fontSize: 18, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
   subtle: { color: '#64748b', fontSize: 12 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  chipPendente: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  chipPendenteText: { color: '#92400e', fontSize: 10, fontWeight: '700' },
   tirarBtn: {
-    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -370,6 +420,17 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   tirarBtnText: { color: '#fff', fontWeight: '700' },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#e0e7ff',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  editBtnText: { color: '#1e3a8a', fontWeight: '700' },
   tabsRow: {
     flexDirection: 'row',
     backgroundColor: '#fff',

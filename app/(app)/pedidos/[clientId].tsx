@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,11 +10,12 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as MailComposer from 'expo-mail-composer';
 
 import { getDb } from '@/db/database';
 import { getClienteById } from '@/db/repositories/clientes';
+import { deleteOutboxVenda } from '@/db/repositories/outbox';
 import {
   compartilharPdf,
   gerarPdfPedido,
@@ -43,7 +44,15 @@ function fmtMoney(v: number | null | undefined) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function fmtVenc(s: string | null | undefined) {
+  if (!s) return '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (!m) return s;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 export default function PedidoDetalhe() {
+  const router = useRouter();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const isOnline = useOnlineStore((s) => s.isOnline);
   const [row, setRow] = useState<OutboxRow | null>(null);
@@ -53,46 +62,84 @@ export default function PedidoDetalhe() {
   const [emailDest, setEmailDest] = useState('');
   const [enviando, setEnviando] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const db = await getDb();
-      const r = await db.getFirstAsync<OutboxRow>(
-        'SELECT * FROM outbox_venda WHERE client_id = ?',
-        [String(clientId)],
-      );
-      if (!r) {
-        setLoading(false);
-        return;
-      }
-      const cli = await getClienteById(r.cd_cliente, r.holding_id);
-      const payload = JSON.parse(r.payload);
-      const display = payload.__display ?? payload;
-      const data: PedidoPdfData = {
-        numero: r.cd_prevenda ?? r.client_id.slice(0, 8).toUpperCase(),
-        clienteNome: cli?.nome ?? `Cliente #${r.cd_cliente}`,
-        clienteCpfCnpj: cli?.cpf_cnpj ?? null,
-        clienteEndereco: cli
-          ? `${cli.endereco ?? ''} ${cli.numero ?? ''} - ${cli.bairro ?? ''}`
-          : null,
-        data: new Date(r.created_at).toLocaleString('pt-BR'),
-        itens: (display.itens || []).map((it: any) => ({
-          cdProduto: it.cdProduto,
-          descricao: it.descricao,
-          qt: Number(it.qt) || 0,
-          vlUnitario: Number(it.vlUnitario) || 0,
-          vlTotal: Number(it.vlTotal) || 0,
-        })),
-        vlTotal: Number(r.vl_total) || 0,
-        formaPagamento: display.formaPagamentoLabel ?? null,
-        parcelas: display.parcelas ?? [],
-        observacao: display.observacao ?? null,
-      };
-      setRow(r);
-      setPdfData(data);
-      setEmailDest(cli?.email ?? '');
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    setPdfUri(null);
+    const db = await getDb();
+    const r = await db.getFirstAsync<OutboxRow>(
+      'SELECT * FROM outbox_venda WHERE client_id = ?',
+      [String(clientId)],
+    );
+    if (!r) {
+      setRow(null);
+      setPdfData(null);
       setLoading(false);
-    })();
+      return;
+    }
+    const cli = await getClienteById(r.cd_cliente, r.holding_id);
+    const payload = JSON.parse(r.payload);
+    const display = payload.__display ?? payload;
+    const data: PedidoPdfData = {
+      numero: r.cd_prevenda ?? r.client_id.slice(0, 8).toUpperCase(),
+      clienteNome: cli?.nome ?? `Cliente #${r.cd_cliente}`,
+      clienteCpfCnpj: cli?.cpf_cnpj ?? null,
+      clienteEndereco: cli
+        ? `${cli.endereco ?? ''} ${cli.numero ?? ''} - ${cli.bairro ?? ''}`
+        : null,
+      data: new Date(r.created_at).toLocaleString('pt-BR'),
+      itens: (display.itens || []).map((it: any) => ({
+        cdProduto: it.cdProduto,
+        descricao: it.descricao,
+        qt: Number(it.qt) || 0,
+        vlUnitario: Number(it.vlUnitario) || 0,
+        vlTotal: Number(it.vlTotal) || 0,
+      })),
+      vlTotal: Number(r.vl_total) || 0,
+      formaPagamento: display.formaPagamentoLabel ?? null,
+      parcelas: display.parcelas ?? [],
+      observacao: display.observacao ?? null,
+    };
+    setRow(r);
+    setPdfData(data);
+    setEmailDest((prev) => prev || cli?.email || '');
+    setLoading(false);
   }, [clientId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      carregar();
+    }, [carregar]),
+  );
+
+  const podeEditar = row?.status === 'pending' || row?.status === 'error';
+
+  function handleEditar() {
+    if (!podeEditar || !row) return;
+    router.push({
+      pathname: '/(app)/pedidos/editar/[clientId]',
+      params: { clientId: row.client_id },
+    });
+  }
+
+  function handleExcluir() {
+    if (!podeEditar || !row) return;
+    Alert.alert(
+      'Excluir pedido',
+      'Esta ação removerá o pedido do dispositivo e ele NÃO será enviado. Confirma?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteOutboxVenda(row.client_id);
+            Alert.alert('Pedido', 'Pedido removido.');
+            router.back();
+          },
+        },
+      ],
+    );
+  }
 
   async function ensurePdf(): Promise<string | null> {
     if (pdfUri) return pdfUri;
@@ -166,6 +213,23 @@ export default function PedidoDetalhe() {
         <Text style={styles.title}>Pedido #{pdfData.numero}</Text>
         <Text style={styles.subtle}>{pdfData.data}</Text>
         <Text style={styles.subtle}>Status: {row.status}</Text>
+
+        {podeEditar && (
+          <View style={styles.buttonsRow}>
+            <ActionButton
+              icon="create"
+              label="Editar"
+              color="#f59e0b"
+              onPress={handleEditar}
+            />
+            <ActionButton
+              icon="trash"
+              label="Excluir"
+              color="#dc2626"
+              onPress={handleExcluir}
+            />
+          </View>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -200,7 +264,7 @@ export default function PedidoDetalhe() {
           {pdfData.parcelas.map((p) => (
             <View key={p.numero} style={styles.itemRow}>
               <Text style={styles.value}>
-                {p.numero} • {p.vencimento}
+                {p.numero} • {fmtVenc(p.vencimento)}
               </Text>
               <Text style={styles.itemTotal}>{fmtMoney(p.valor)}</Text>
             </View>
