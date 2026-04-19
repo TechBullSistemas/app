@@ -273,6 +273,11 @@ export async function listPendingClientes(): Promise<OutboxClienteRow[]> {
   );
 }
 
+export async function deleteOutboxCliente(clientId: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM outbox_cliente WHERE client_id = ?', [clientId]);
+}
+
 export async function setOutboxClienteStatus(
   clientId: string,
   status: OutboxStatus,
@@ -297,6 +302,20 @@ export async function setOutboxClienteStatus(
       patch?.cdClienteRemoto ?? null,
       clientId,
     ],
+  );
+}
+
+/**
+ * Remove qualquer entrada da outbox que já tenha status 'sent'.
+ * Útil para limpar registros legados criados em versões anteriores onde o
+ * upload marcava como 'sent' em vez de deletar.
+ */
+export async function purgeSentOutbox() {
+  const db = await getDb();
+  await db.execAsync(
+    `DELETE FROM outbox_venda    WHERE status = 'sent';
+     DELETE FROM outbox_visita   WHERE status = 'sent';
+     DELETE FROM outbox_cliente  WHERE status = 'sent';`,
   );
 }
 

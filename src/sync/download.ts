@@ -18,9 +18,10 @@ export async function runDownloadSync(opts?: { onPhotoStart?: () => void }) {
     await resetSyncMeta(SYNC_ENTITY_KEYS);
 
     const holdingId = useSessionStore.getState().user?.holdingId;
+    const cdEmpresa = useSessionStore.getState().user?.cdEmpresa;
 
     for (const entity of SYNC_ENTITIES) {
-      await syncEntity(entity, holdingId);
+      await syncEntity(entity, holdingId, cdEmpresa);
     }
 
     store.finishDownload(true);
@@ -33,7 +34,11 @@ export async function runDownloadSync(opts?: { onPhotoStart?: () => void }) {
   }
 }
 
-async function syncEntity(entity: SyncEntityDef, holdingIdFallback?: number) {
+async function syncEntity(
+  entity: SyncEntityDef,
+  holdingIdFallback?: number,
+  cdEmpresa?: number,
+) {
   const store = useSyncStore.getState();
   const api = getApi();
 
@@ -53,6 +58,10 @@ async function syncEntity(entity: SyncEntityDef, holdingIdFallback?: number) {
       }
       if (downloaded === 0) {
         params.withTotal = 1;
+      }
+      // Produto precisa do cdEmpresa para filtrar saldoEstoque corretamente.
+      if (cdEmpresa && entity.key === 'produto') {
+        params.cdEmpresa = cdEmpresa;
       }
 
       const { data } = await api.get<{

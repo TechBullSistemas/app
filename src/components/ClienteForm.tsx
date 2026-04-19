@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ClienteLocalInput } from '@/db/repositories/clientes';
 import { ValidaCPFCNPJ } from '@/utils/validaCPFCNPJ';
 import { searchCNPJ } from '@/services/searchCNPJ';
+import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 
 function onlyDigits(s: string) {
   return (s ?? '').replace(/\D/g, '');
@@ -212,10 +212,9 @@ export function ClienteForm({
   }
 
   return (
-    <ScrollView
+    <KeyboardAwareScreen
       style={styles.container}
       contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 80 }}
-      keyboardShouldPersistTaps="handled"
     >
       <View style={styles.row}>
         <Pressable
@@ -385,7 +384,7 @@ export function ClienteForm({
           {saving ? 'Salvando...' : submitLabel}
         </Text>
       </Pressable>
-    </ScrollView>
+    </KeyboardAwareScreen>
   );
 }
 

@@ -80,6 +80,7 @@ export function ProdutoPicker({ visible, onClose, onSelect }: Props) {
                   <View style={[styles.thumb, styles.thumbEmpty]} />
                 )}
                 <View style={{ flex: 1 }}>
+                  <Text style={styles.code}>#{item.cd_produto}</Text>
                   <Text style={styles.name}>{item.descricao}</Text>
                   <Text style={styles.sub}>
                     Ref: {item.referencia || '—'} • Estoque: {item.qt_disponivel ?? 0}
@@ -117,6 +118,7 @@ const styles = StyleSheet.create({
   sep: { height: 1, backgroundColor: '#e2e8f0' },
   thumb: { width: 56, height: 56, borderRadius: 8, backgroundColor: '#f1f5f9' },
   thumbEmpty: { backgroundColor: '#e2e8f0' },
+  code: { color: '#1e3a8a', fontSize: 11, fontWeight: '700' },
   name: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
   sub: { color: '#64748b', fontSize: 12, marginTop: 2 },
   price: { color: '#16a34a', fontWeight: '700', marginTop: 2 },

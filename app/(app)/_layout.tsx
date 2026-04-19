@@ -1,6 +1,15 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
+import { purgeSentOutbox } from '@/db/repositories/outbox';
 
 export default function AppLayout() {
+  useEffect(() => {
+    // Limpa lixo de versões antigas onde uploads ficavam com status 'sent'
+    purgeSentOutbox().catch(() => {
+      /* best-effort */
+    });
+  }, []);
+
   return (
     <Stack
       screenOptions={{
@@ -27,6 +36,7 @@ export default function AppLayout() {
       <Stack.Screen name="pedidos/editar/[clientId]" options={{ title: 'Editar Pedido' }} />
       <Stack.Screen name="visitas/[clientId]" options={{ title: 'Editar Visita' }} />
       <Stack.Screen name="mensagens/index" options={{ title: 'Mensagens' }} />
+      <Stack.Screen name="meta/index" options={{ title: 'Meta' }} />
       <Stack.Screen name="senha" options={{ title: 'Alterar Senha' }} />
       <Stack.Screen name="sync/buscar" options={{ title: 'Buscar Informações' }} />
       <Stack.Screen name="sync/enviar" options={{ title: 'Enviar Informações' }} />

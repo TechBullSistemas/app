@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -19,18 +19,23 @@ import {
   CondicaoPagtoPicker,
   CondicaoOpt,
 } from '@/components/CondicaoPagtoPicker';
+import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
 import { ProdutoRow, getProdutoById } from '@/db/repositories/produtos';
 import { getDb } from '@/db/database';
 import { useSessionStore } from '@/stores/session';
+import { useOnlineStore } from '@/stores/online';
 import {
   enqueueVenda,
   getOutboxVenda,
   updateOutboxVendaPayload,
 } from '@/db/repositories/outbox';
+import { gerarPdfPedido, lerPdfBase64 } from '@/services/pdfVenda';
+import { enviarVendaPorEmail } from '@/api/email';
+import { extractApiErrorMessage } from '@/api/client';
 
-// Forma de pagamento e tipo de venda fixos no app (padrão = 1).
-const CD_FORMA_PAGAMENTO_PADRAO = 1;
+// Forma de pagamento (4 = Crediário) e tipo de venda (1) fixos no app.
+const CD_FORMA_PAGAMENTO_PADRAO = 4;
 const CD_TIPO_VENDA_PADRAO = 1;
 
 interface ItemPedido {
@@ -55,8 +60,10 @@ interface CondicaoConfig {
 
 interface ParcelaEditavel {
   numero: number;
-  vencimento: string; // YYYY-MM-DD para edição
+  vencimento: string; // YYYY-MM-DD canônico
+  vencimentoInput?: string; // texto enquanto o usuário digita (dd/mm/aaaa)
   valor: number;
+  valorInput?: string; // texto enquanto o usuário digita (sem persistir)
   manual?: boolean;
 }
 
@@ -68,13 +75,6 @@ interface Props {
 
 function fmtMoney(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function isoDate(d: Date) {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}T00:00:00.000Z`;
 }
 
 function dateToYmd(d: Date) {
@@ -123,6 +123,7 @@ function round2(v: number) {
 export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const router = useRouter();
   const user = useSessionStore((s) => s.user);
+  const isOnline = useOnlineStore((s) => s.isOnline);
   const isEdit = !!clientId;
 
   const [cliPickerOpen, setCliPickerOpen] = useState(false);
@@ -138,6 +139,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(isEdit);
 
+  // Envio automático por e-mail ao salvar novo pedido (não disponível em edição).
+  const [enviarEmailAoSalvar, setEnviarEmailAoSalvar] = useState(false);
+  const [emailDest, setEmailDest] = useState('');
+
   // Pré-selecionar cliente passado por param (modo "novo via cliente")
   useEffect(() => {
     if (isEdit) return;
@@ -148,6 +153,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       })();
     }
   }, [isEdit, preCdCliente, preHoldingId]);
+
+  // Quando o cliente é selecionado, pré-popular o destino do email.
+  useEffect(() => {
+    if (cliente?.email) setEmailDest(cliente.email);
+  }, [cliente?.email]);
 
   // Carregar pedido existente em modo edição
   useEffect(() => {
@@ -396,23 +406,87 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     setItens((prev) => prev.filter((it) => it.cdProduto !== cdProduto));
   }
 
-  function alterarParcelaValor(numero: number, vl: number) {
+  // Redistribui valores: se a parcela alterada NÃO for a última, ajusta as
+  // de baixo. Se for a última, ajusta as de cima. O total final permanece
+  // sempre = totalComAjuste, com a diferença de centavos absorvida pela
+  // última parcela ajustada (para evitar arredondamento "espalhado").
+  function alterarParcelaValor(numero: number, novoValor: number) {
     setParcelasManuais(true);
-    setParcelas((prev) =>
-      prev.map((p) =>
-        p.numero === numero ? { ...p, valor: vl, manual: true } : p,
-      ),
-    );
+    setParcelas((prev) => {
+      if (prev.length === 0 || totalComAjuste <= 0) return prev;
+      const idx = prev.findIndex((p) => p.numero === numero);
+      if (idx < 0) return prev;
+
+      const valor = isFinite(novoValor) && novoValor >= 0 ? novoValor : 0;
+      const next = prev.map((p) => ({ ...p }));
+      next[idx] = { ...next[idx], valor, manual: true };
+
+      const isUltima = idx === next.length - 1;
+      if (isUltima) {
+        // Recalcula as de cima (índices 0..idx-1).
+        const restante = round2(totalComAjuste - valor);
+        const antes = next.slice(0, idx).length;
+        if (antes > 0) {
+          const base = round2(restante / antes);
+          let acumulado = 0;
+          for (let i = 0; i < idx; i++) {
+            const v = i === idx - 1 ? round2(restante - acumulado) : base;
+            acumulado += v;
+            next[i] = { ...next[i], valor: v };
+          }
+        }
+      } else {
+        // Recalcula as de baixo (idx+1..N-1).
+        const somaAntes = next.slice(0, idx + 1).reduce((a, p) => a + p.valor, 0);
+        const restante = round2(totalComAjuste - somaAntes);
+        const depois = next.length - (idx + 1);
+        if (depois > 0) {
+          const base = round2(restante / depois);
+          let acumulado = 0;
+          for (let i = idx + 1; i < next.length; i++) {
+            const v =
+              i === next.length - 1 ? round2(restante - acumulado) : base;
+            acumulado += v;
+            next[i] = { ...next[i], valor: v };
+          }
+        }
+      }
+      return next;
+    });
   }
 
-  function alterarParcelaVencimento(numero: number, ymd: string | null) {
-    if (!ymd) return;
+  // Vencimentos: ao alterar uma parcela, desloca as demais (de baixo se não
+  // for a última; de cima se for) preservando o intervalo entre elas.
+  function alterarParcelaVencimento(numero: number, ymd: string) {
     setParcelasManuais(true);
-    setParcelas((prev) =>
-      prev.map((p) =>
-        p.numero === numero ? { ...p, vencimento: ymd, manual: true } : p,
-      ),
-    );
+    setParcelas((prev) => {
+      const idx = prev.findIndex((p) => p.numero === numero);
+      if (idx < 0) return prev;
+
+      const novaData = ymdToDate(ymd);
+      const antigaData = ymdToDate(prev[idx].vencimento);
+      if (!novaData || !antigaData) {
+        return prev.map((p, i) =>
+          i === idx ? { ...p, vencimento: ymd, manual: true } : p,
+        );
+      }
+
+      const diffDias = Math.round(
+        (novaData.getTime() - antigaData.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      const next = prev.map((p, i) => {
+        if (i === idx) return { ...p, vencimento: ymd, manual: true };
+        const isUltima = idx === prev.length - 1;
+        const aplicar = isUltima ? i < idx : i > idx;
+        if (!aplicar) return p;
+        const d = ymdToDate(p.vencimento);
+        if (!d) return p;
+        d.setUTCDate(d.getUTCDate() + diffDias);
+        return { ...p, vencimento: dateToYmd(d), vencimentoInput: undefined };
+      });
+      return next;
+    });
   }
 
   function regenerarParcelas() {
@@ -430,6 +504,21 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       return Alert.alert('Atenção', 'Selecione a condição de pagamento.');
     if (!parcelas.length)
       return Alert.alert('Atenção', 'Sem parcelas geradas. Verifique a condição.');
+
+    if (enviarEmailAoSalvar && !isEdit) {
+      if (!isOnline) {
+        return Alert.alert(
+          'Sem conexão',
+          'Para enviar o e-mail automaticamente é necessário estar online. Desmarque a opção ou conecte-se à internet.',
+        );
+      }
+      if (!emailDest || !emailDest.includes('@')) {
+        return Alert.alert(
+          'E-mail',
+          'Informe um e-mail válido para envio automático ou desmarque a opção.',
+        );
+      }
+    }
 
     const diff = round2(totalParcelas - totalComAjuste);
     if (Math.abs(diff) > 0.01) {
@@ -477,18 +566,47 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         nrForma: CD_FORMA_PAGAMENTO_PADRAO,
       }));
 
-      const prevendaFormaPagamento = parcelas.map((p) => ({
-        idFormaPagamento: CD_FORMA_PAGAMENTO_PADRAO,
-        nrParcela: p.numero,
-        vlParcela: p.valor,
-        vlTotal: totalComAjuste,
-        vlFormaOriginal: p.valor,
-      }));
+      // Mesmo cálculo do projeto web (calculaTotalVenda):
+      //   vlBruto = soma_itens - vlDescontoTotal
+      //   vlTotal = vlBruto + vlAcrescimoTotal
+      // Respeita edição manual de parcelas (soma das parcelas como total final)
+      const vlFinal = parcelasManuais
+        ? round2(totalParcelas)
+        : round2(totalComAjuste);
+      const diffAjuste = round2(vlFinal - total);
+      const vlAcrescimoTotal = diffAjuste > 0 ? diffAjuste : 0;
+      const vlDescontoTotal = diffAjuste < 0 ? -diffAjuste : 0;
+      // vl_bruto também passa a refletir o valor já com acréscimo somado
+      // (e desconto subtraído), conforme regra do projeto.
+      const vlTotalSalvar = round2(total - vlDescontoTotal + vlAcrescimoTotal);
+      const vlBrutoSalvar = vlTotalSalvar;
 
-      const prAcrescimo = condicaoConfig.prAcrescimo || 0;
-      const prDesconto = condicaoConfig.prDesconto || 0;
-      const vlAcrescimoTotal = round2((total * prAcrescimo) / 100);
-      const vlDescontoTotal = round2((total * prDesconto) / 100);
+      // Percentuais: priorizam o cadastro da condição. Se o usuário editou
+      // parcelas e o ajuste real divergir, recalcula o % baseado no efetivo
+      // (assim o registro fica consistente com vlAcrescimoTotal).
+      const prAcrescimoCfg = condicaoConfig.prAcrescimo || 0;
+      const prDescontoCfg = condicaoConfig.prDesconto || 0;
+      const prAcrescimo =
+        vlAcrescimoTotal > 0 && vlBrutoSalvar > 0
+          ? round2((vlAcrescimoTotal / vlBrutoSalvar) * 100)
+          : prAcrescimoCfg;
+      const prDesconto =
+        vlDescontoTotal > 0 && total > 0
+          ? round2((vlDescontoTotal / total) * 100)
+          : prDescontoCfg;
+
+      // PrevendaFormaPagamento: PK = (holding, empresa, prevenda, idFormaPagamento)
+      // → uma linha POR FORMA (não por parcela). Mesma regra do projeto web.
+      const vlPrimeiraParcela = parcelas[0]?.valor ?? vlTotalSalvar;
+      const prevendaFormaPagamento = [
+        {
+          idFormaPagamento: CD_FORMA_PAGAMENTO_PADRAO,
+          nrParcela: parcelas.length || 1,
+          vlParcela: vlPrimeiraParcela,
+          vlTotal: vlTotalSalvar,
+          vlFormaOriginal: vlTotalSalvar,
+        },
+      ];
 
       const uploadPayload = {
         cdEmpresa: user.cdEmpresa,
@@ -498,12 +616,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         cdFormaPagamento: CD_FORMA_PAGAMENTO_PADRAO,
         dtEmissao,
         obs: obs.trim() || undefined,
-        vlBruto: total,
+        vlBruto: vlBrutoSalvar,
         prAcrescimo,
         vlAcrescimoTotal,
+        vlAcrescimoTotalItem: 0,
         prDesconto,
         vlDescontoTotal,
-        vlTotal: totalComAjuste,
+        vlTotal: vlTotalSalvar,
         prevendaItem,
         prevendaTitulo,
         prevendaFormaPagamento,
@@ -531,7 +650,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         await updateOutboxVendaPayload(
           cId,
           { ...uploadPayload, __display: displayPayload },
-          totalComAjuste,
+          vlTotalSalvar,
         );
       } else {
         await enqueueVenda({
@@ -540,16 +659,52 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           cdEmpresa: user.cdEmpresa,
           holdingId: user.holdingId,
           payload: { ...uploadPayload, __display: displayPayload },
-          vlTotal: totalComAjuste,
+          vlTotal: vlTotalSalvar,
         });
       }
 
-      Alert.alert(
-        isEdit ? 'Pedido atualizado' : 'Pedido salvo',
-        isEdit
-          ? 'Alterações registradas. Use "Enviar Informações" para sincronizar.'
-          : 'Pedido registrado offline. Use "Enviar Informações" quando estiver online.',
-      );
+      // Envio automático por e-mail (apenas em novo pedido + checkbox marcado).
+      if (enviarEmailAoSalvar && !isEdit) {
+        try {
+          const numero = cId.slice(0, 8).toUpperCase();
+          const pdfUri = await gerarPdfPedido({
+            numero,
+            clienteNome: cliente.nome ?? `Cliente #${cliente.cd_cliente}`,
+            clienteCpfCnpj: cliente.cpf_cnpj ?? null,
+            clienteEndereco: `${cliente.endereco ?? ''} ${cliente.numero ?? ''} - ${cliente.bairro ?? ''}`,
+            data: new Date(dtEmissao).toLocaleString('pt-BR'),
+            itens: displayPayload.itens,
+            vlTotal: totalComAjuste,
+            formaPagamento: condicaoSel.descricao,
+            parcelas: displayPayload.parcelas,
+            observacao: displayPayload.observacao,
+          });
+          const base64 = await lerPdfBase64(pdfUri);
+          await enviarVendaPorEmail({
+            to: emailDest,
+            subject: `Pedido ${numero}`,
+            nrPrevenda: numero,
+            pdfBase64: base64,
+            filename: `pedido-${numero}.pdf`,
+          });
+          Alert.alert(
+            'Pedido salvo',
+            `Pedido registrado e e-mail enviado para ${emailDest}.`,
+          );
+        } catch (err) {
+          Alert.alert(
+            'E-mail não enviado',
+            `O pedido foi salvo, mas o e-mail falhou: ${extractApiErrorMessage(err)}`,
+          );
+        }
+      } else {
+        Alert.alert(
+          isEdit ? 'Pedido atualizado' : 'Pedido salvo',
+          isEdit
+            ? 'Alterações registradas. Use "Enviar Informações" para sincronizar.'
+            : 'Pedido registrado offline. Use "Enviar Informações" quando estiver online.',
+        );
+      }
       router.back();
     } catch (err) {
       console.error(err);
@@ -568,23 +723,15 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   }
 
   return (
-    <ScrollView
+    <KeyboardAwareScreen
       style={styles.container}
       contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 80 }}
-      keyboardShouldPersistTaps="handled"
     >
       <Text style={styles.label}>Cliente</Text>
-      <Pressable
-        style={styles.field}
-        onPress={() => !isEdit && setCliPickerOpen(true)}
-        disabled={isEdit}
-      >
+      <Pressable style={styles.field} onPress={() => setCliPickerOpen(true)}>
         <Text style={cliente ? styles.value : styles.placeholder}>
           {cliente ? cliente.nome : 'Selecionar cliente...'}
         </Text>
-        {isEdit && (
-          <Text style={styles.subtle}>Cliente não pode ser alterado em edição.</Text>
-        )}
       </Pressable>
 
       <View style={styles.itensHeader}>
@@ -711,22 +858,42 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                 <Text style={styles.itemLbl}>Vencimento</Text>
                 <TextInput
                   style={styles.itemInput}
-                  value={ymdToBr(p.vencimento)}
+                  value={p.vencimentoInput ?? ymdToBr(p.vencimento)}
                   keyboardType="numeric"
                   placeholder="dd/mm/aaaa"
                   maxLength={10}
                   onChangeText={(t) => {
                     const masked = maskDateBR(t);
-                    const ymd = brToYmd(masked);
                     setParcelasManuais(true);
+                    // Sempre atualiza o texto digitado para não travar o input
                     setParcelas((prev) =>
                       prev.map((x) =>
                         x.numero === p.numero
-                          ? {
-                              ...x,
-                              vencimento: ymd || x.vencimento,
-                              manual: true,
-                            }
+                          ? { ...x, vencimentoInput: masked }
+                          : x,
+                      ),
+                    );
+                    // Quando completa data válida, persiste e redistribui
+                    if (masked.length === 10) {
+                      const ymd = brToYmd(masked);
+                      if (ymd) {
+                        alterarParcelaVencimento(p.numero, ymd);
+                        setParcelas((prev) =>
+                          prev.map((x) =>
+                            x.numero === p.numero
+                              ? { ...x, vencimentoInput: undefined }
+                              : x,
+                          ),
+                        );
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    // Limpa o input incompleto ao sair do foco (volta ao canônico)
+                    setParcelas((prev) =>
+                      prev.map((x) =>
+                        x.numero === p.numero
+                          ? { ...x, vencimentoInput: undefined }
                           : x,
                       ),
                     );
@@ -738,10 +905,28 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                 <TextInput
                   style={styles.itemInput}
                   keyboardType="decimal-pad"
-                  value={String(p.valor)}
-                  onChangeText={(t) =>
-                    alterarParcelaValor(p.numero, Number(t.replace(',', '.')) || 0)
-                  }
+                  value={p.valorInput ?? String(p.valor)}
+                  onChangeText={(t) => {
+                    setParcelas((prev) =>
+                      prev.map((x) =>
+                        x.numero === p.numero ? { ...x, valorInput: t } : x,
+                      ),
+                    );
+                  }}
+                  onEndEditing={(e) => {
+                    const v = Number(
+                      String(e.nativeEvent.text).replace(',', '.'),
+                    );
+                    alterarParcelaValor(
+                      p.numero,
+                      isFinite(v) && v >= 0 ? v : 0,
+                    );
+                    setParcelas((prev) =>
+                      prev.map((x) =>
+                        x.numero === p.numero ? { ...x, valorInput: undefined } : x,
+                      ),
+                    );
+                  }}
                   selectTextOnFocus
                 />
               </View>
@@ -784,6 +969,43 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         <Text style={styles.totalValue}>{fmtMoney(totalComAjuste)}</Text>
       </View>
 
+      {!isEdit && (
+        <View style={styles.emailCard}>
+          <View style={styles.emailRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Enviar por e-mail ao salvar</Text>
+              <Text style={styles.subtle}>
+                {cliente?.email
+                  ? `Padrão: ${cliente.email}`
+                  : 'Cliente sem e-mail cadastrado — informe abaixo.'}
+              </Text>
+            </View>
+            <Switch
+              value={enviarEmailAoSalvar}
+              onValueChange={setEnviarEmailAoSalvar}
+              trackColor={{ true: '#16a34a', false: '#cbd5e1' }}
+            />
+          </View>
+          {enviarEmailAoSalvar && (
+            <>
+              <TextInput
+                style={[styles.input, { marginTop: 8 }]}
+                value={emailDest}
+                onChangeText={setEmailDest}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="cliente@exemplo.com"
+              />
+              {!isOnline && (
+                <Text style={styles.warn}>
+                  Você está offline. Conecte-se para enviar pelo servidor.
+                </Text>
+              )}
+            </>
+          )}
+        </View>
+      )}
+
       <Pressable
         style={[styles.button, salvando && { opacity: 0.6 }]}
         onPress={salvar}
@@ -817,17 +1039,20 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         }}
         selectedId={condicaoSel?.cd_condicao ?? null}
       />
-    </ScrollView>
+    </KeyboardAwareScreen>
   );
 }
 
 function extractPermiteSaldoNegativo(rawJson?: string | null) {
-  if (!rawJson) return true; // sem info: permite (não bloqueia)
+  if (!rawJson) return true;
   try {
     const parsed = JSON.parse(rawJson);
-    // Mesma regra do frontend web (venda-itens): só bloqueia se 'N' e tipo 'P'
-    if (parsed?.idSaldoNegativo === 'N' && parsed?.idTipoProduto === 'P')
-      return false;
+    const tipo = parsed?.idTipoProduto;
+    const flag = parsed?.idSaldoNegativo;
+    // Espelha a regra do projeto web (venda-itens.tsx):
+    //   bloqueia somente quando idTipoProduto === 'P' e idSaldoNegativo === 'N'
+    //   qualquer outro caso (S, A, flag 'S' ou ausente) → permite.
+    if (tipo === 'P' && flag === 'N') return false;
     return true;
   } catch {
     return true;
@@ -945,6 +1170,15 @@ const styles = StyleSheet.create({
   },
   totalLabel: { color: '#cbd5e1', fontWeight: '600' },
   totalValue: { color: '#22c55e', fontWeight: '800', fontSize: 22 },
+  emailCard: {
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginTop: 8,
+  },
+  emailRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   button: {
     backgroundColor: '#16a34a',
     paddingVertical: 14,

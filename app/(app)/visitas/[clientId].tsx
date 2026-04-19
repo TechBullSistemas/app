@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -12,6 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 
 import {
   deleteVisitaLocal,
@@ -163,7 +163,7 @@ export default function EditarVisitaScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <KeyboardAwareScreen style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
       <View style={styles.headerCard}>
         <Text style={styles.subtle}>Cliente</Text>
         <Text style={styles.title}>{cliente?.nome ?? `#${visita.cd_cliente}`}</Text>
@@ -215,7 +215,7 @@ export default function EditarVisitaScreen() {
       <Pressable style={styles.btnExcluir} onPress={handleExcluir}>
         <Text style={styles.btnExcluirText}>Excluir visita pendente</Text>
       </Pressable>
-    </ScrollView>
+    </KeyboardAwareScreen>
   );
 }
 

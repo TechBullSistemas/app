@@ -1,8 +1,12 @@
 import { getApi, extractApiErrorMessage } from '@/api/client';
 import {
+  deleteOutboxCliente,
+  deleteOutboxVenda,
+  deleteOutboxVisita,
   listPendingClientes,
   listPendingVendas,
   listPendingVisitas,
+  purgeSentOutbox,
   setOutboxClienteStatus,
   setOutboxVendaStatus,
   setOutboxVisitaStatus,
@@ -13,11 +17,18 @@ import {
   reconcileClientesPendentes,
   ensureClienteOutbox,
 } from '@/db/repositories/clientes';
-import { markVisitaUploaded } from '@/db/repositories/visitas';
+import { deleteVisitaLocal } from '@/db/repositories/visitas';
 import { useSyncStore, UploadItemProgress } from '@/stores/sync';
 
 export async function runUploadSync() {
   const store = useSyncStore.getState();
+
+  // Limpa entradas legadas que ficaram com status 'sent' em versões anteriores.
+  try {
+    await purgeSentOutbox();
+  } catch {
+    // best-effort
+  }
 
   // Reconcilia clientes locais que já foram sincronizados em uma execução anterior
   // mas ficaram marcados como pendentes (estado inconsistente herdado).
@@ -102,7 +113,8 @@ export async function runUploadSync() {
         await markClienteSincronizado(c.client_id);
         throw remapErr;
       }
-      await setOutboxClienteStatus(c.client_id, 'sent', { cdClienteRemoto: cdReal });
+      // Sucesso: remove a entrada da outbox (não mantém histórico local)
+      await deleteOutboxCliente(c.client_id);
       store.setUploadItem(c.client_id, { status: 'sent' });
     } catch (err) {
       const msg = extractApiErrorMessage(err);
@@ -122,12 +134,12 @@ export async function runUploadSync() {
     try {
       const fullPayload = JSON.parse(v.payload);
       const { __display: _ignore, ...payload } = fullPayload;
-      const { data } = await api.post('/upload/venda', {
+      await api.post('/upload/venda', {
         clientId: v.client_id,
         ...payload,
       });
-      const nrPrevenda = data?.prevenda?.nrPrevenda ?? data?.cdPrevenda ?? null;
-      await setOutboxVendaStatus(v.client_id, 'sent', { cdPrevenda: nrPrevenda });
+      // Sucesso: remove a venda da outbox local
+      await deleteOutboxVenda(v.client_id);
       store.setUploadItem(v.client_id, { status: 'sent' });
     } catch (err) {
       const msg = extractApiErrorMessage(err);
@@ -142,14 +154,13 @@ export async function runUploadSync() {
     await setOutboxVisitaStatus(v.client_id, 'sending');
     try {
       const payload = JSON.parse(v.payload);
-      const { data } = await api.post('/upload/visita', {
+      await api.post('/upload/visita', {
         clientId: v.client_id,
         ...payload,
       });
-      const cdVisita = data?.visita?.cdVisita ?? null;
-      const cdEmpresa = data?.visita?.cdEmpresa ?? payload?.cdEmpresa ?? null;
-      await markVisitaUploaded(v.client_id, cdVisita, cdEmpresa);
-      await setOutboxVisitaStatus(v.client_id, 'sent');
+      // Sucesso: remove a visita local e a entrada da outbox
+      await deleteVisitaLocal(v.client_id);
+      await deleteOutboxVisita(v.client_id);
       store.setUploadItem(v.client_id, { status: 'sent' });
     } catch (err) {
       const msg = extractApiErrorMessage(err);

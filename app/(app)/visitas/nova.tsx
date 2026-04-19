@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -13,6 +12,7 @@ import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 
 import { ClientePicker } from '@/components/ClientePicker';
 import { ClienteRow } from '@/db/repositories/clientes';
@@ -97,7 +97,7 @@ export default function NovaVisitaScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <KeyboardAwareScreen style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
       <Text style={styles.label}>Cliente</Text>
       <Pressable style={styles.field} onPress={() => setPickerOpen(true)}>
         <Text style={cliente ? styles.value : styles.placeholder}>
@@ -150,7 +150,7 @@ export default function NovaVisitaScreen() {
         onClose={() => setPickerOpen(false)}
         onSelect={setCliente}
       />
-    </ScrollView>
+    </KeyboardAwareScreen>
   );
 }
 

@@ -80,6 +80,7 @@ export default function ProdutosScreen() {
                 )}
               </View>
               <View style={{ flex: 1 }}>
+                <Text style={styles.code}>#{item.cd_produto}</Text>
                 <Text style={styles.name} numberOfLines={2}>
                   {item.descricao ?? '(sem descrição)'}
                 </Text>
@@ -111,6 +112,7 @@ const styles = StyleSheet.create({
   thumbBox: { width: 64, height: 64 },
   thumb: { width: 64, height: 64, borderRadius: 8, backgroundColor: '#f1f5f9' },
   thumbEmpty: { alignItems: 'center', justifyContent: 'center' },
+  code: { color: '#1e3a8a', fontSize: 11, fontWeight: '700' },
   name: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
   sub: { color: '#64748b', marginTop: 2, fontSize: 12 },
   price: { color: '#16a34a', fontWeight: '700', marginTop: 4 },

@@ -40,6 +40,7 @@ export default function ProdutoDetalhe() {
       )}
 
       <View style={styles.card}>
+        <Text style={styles.code}>#{item.cd_produto}</Text>
         <Text style={styles.title}>{item.descricao}</Text>
         <Text style={styles.subtle}>Ref.: {item.referencia || '—'}</Text>
         <Text style={styles.price}>{fmtMoney(item.vl_venda)}</Text>
@@ -60,6 +61,7 @@ const styles = StyleSheet.create({
   image: { width: '100%', height: 280, backgroundColor: '#fff', borderRadius: 12 },
   imageEmpty: { alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: '#fff', padding: 16, borderRadius: 12, gap: 4 },
+  code: { color: '#1e3a8a', fontSize: 12, fontWeight: '700' },
   title: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
   subtle: { color: '#475569' },
   price: { color: '#16a34a', fontWeight: '800', fontSize: 22, marginVertical: 6 },

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { changePasswordRequest } from '@/api/auth';
 import { extractApiErrorMessage } from '@/api/client';
 import { useOnlineStore } from '@/stores/online';
+import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 
 export default function AlterarSenha() {
   const router = useRouter();
@@ -51,7 +51,7 @@ export default function AlterarSenha() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 12 }}>
+    <KeyboardAwareScreen style={styles.container} contentContainerStyle={{ padding: 16, gap: 12 }}>
       {!isOnline && (
         <View style={styles.warn}>
           <Text style={styles.warnText}>Você está offline. Conecte-se para alterar a senha.</Text>
@@ -78,7 +78,7 @@ export default function AlterarSenha() {
       >
         <Text style={styles.buttonText}>{loading ? 'Alterando...' : 'Alterar Senha'}</Text>
       </Pressable>
-    </ScrollView>
+    </KeyboardAwareScreen>
   );
 }
 
