@@ -117,6 +117,18 @@ CREATE TABLE IF NOT EXISTS condicao_pagto (
   PRIMARY KEY (cd_condicao, holding_id)
 );
 
+CREATE TABLE IF NOT EXISTS condicao_preco (
+  cd_condicao_preco INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  descricao TEXT,
+  id_promocao INTEGER DEFAULT 0,
+  pr_acrescimo REAL DEFAULT 0,
+  pr_acrescimo_comissao REAL DEFAULT 0,
+  id_tipo_acrescimo TEXT DEFAULT 'V',
+  raw_json TEXT,
+  PRIMARY KEY (cd_condicao_preco, holding_id)
+);
+
 CREATE TABLE IF NOT EXISTS forma_pagamento (
   cd_forma INTEGER NOT NULL,
   holding_id INTEGER NOT NULL,
@@ -298,6 +310,7 @@ const TABLES = [
   'fornecedor',
   'categoria',
   'condicao_pagto',
+  'condicao_preco',
   'forma_pagamento',
   'natureza_operacao',
   'tipo_venda',

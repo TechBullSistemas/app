@@ -1,5 +1,11 @@
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Line,
+  Path,
+  Polygon,
+  Text as SvgText,
+} from 'react-native-svg';
 
 interface Props {
   value: number;
@@ -23,7 +29,9 @@ const SEGMENTS: Segment[] = [
 
 const TRACK_BG = '#e5e7eb';
 const NEEDLE_COLOR = '#0f172a';
-const TICK_COLOR = '#475569';
+const TICK_MAJOR = '#334155';
+const TICK_MINOR = '#94a3b8';
+const TICK_LABEL = '#475569';
 
 const START_ANGLE = 180;
 const END_ANGLE = 360;
@@ -59,24 +67,41 @@ export function SpeedometerGauge({
   formattedValue,
   formattedTarget,
 }: Props) {
+  const height = size * 0.95;
   const cx = size / 2;
-  const cy = size * 0.62;
-  const stroke = size * 0.1;
-  const r = size / 2 - stroke / 2 - 4;
+  const cy = size * 0.55;
+  const stroke = size * 0.09;
+  const r = size / 2 - stroke / 2 - 6;
 
   const safePercent = Math.max(0, Math.min(100, value));
   const needleAngle = valueToAngle(value);
-  const needleEnd = polar(cx, cy, r - stroke / 2 - 4, needleAngle);
 
-  const ticks = [0, 25, 50, 75, 100];
+  const needleLen = r - stroke / 2 - size * 0.04;
+  const needleTip = polar(cx, cy, needleLen, needleAngle);
+  const needleBaseLeft = polar(
+    cx,
+    cy,
+    size * 0.025,
+    needleAngle + 90,
+  );
+  const needleBaseRight = polar(
+    cx,
+    cy,
+    size * 0.025,
+    needleAngle - 90,
+  );
+  const needlePoints = `${needleTip.x},${needleTip.y} ${needleBaseLeft.x},${needleBaseLeft.y} ${needleBaseRight.x},${needleBaseRight.y}`;
+
+  const majorTicks = [0, 50, 100];
+  const minorTicks = [25, 75];
 
   const displayPercent = Number.isFinite(value)
     ? Math.round(value)
     : 0;
 
   return (
-    <View style={[styles.container, { width: size, height: size * 0.78 }]}>
-      <Svg width={size} height={size * 0.78} viewBox={`0 0 ${size} ${size * 0.78}`}>
+    <View style={[styles.container, { width: size, height }]}>
+      <Svg width={size} height={height} viewBox={`0 0 ${size} ${height}`}>
         {/* Track de fundo */}
         <Path
           d={describeArc(cx, cy, r, START_ANGLE, END_ANGLE)}
@@ -89,10 +114,11 @@ export function SpeedometerGauge({
         {/* Segmentos coloridos */}
         {SEGMENTS.map((seg, i) => {
           const a1 = valueToAngle(seg.from);
-          const a2 = valueToAngle(Math.min(seg.to, safePercent || 0.0001));
           if (safePercent <= seg.from) return null;
           const a2Final =
-            safePercent >= seg.to ? valueToAngle(seg.to) : a2;
+            safePercent >= seg.to
+              ? valueToAngle(seg.to)
+              : valueToAngle(safePercent);
           return (
             <Path
               key={i}
@@ -105,27 +131,46 @@ export function SpeedometerGauge({
           );
         })}
 
-        {/* Ticks */}
-        {ticks.map((t) => {
+        {/* Ticks menores (25 e 75) - dentro do arco */}
+        {minorTicks.map((t) => {
           const a = valueToAngle(t);
-          const inner = polar(cx, cy, r - stroke / 2 - 6, a);
-          const outer = polar(cx, cy, r + stroke / 2 + 2, a);
+          const inner = polar(cx, cy, r - stroke / 2 + 2, a);
+          const outer = polar(cx, cy, r - stroke / 2 + stroke * 0.45, a);
           return (
-            <G key={t}>
-              <Line
-                x1={inner.x}
-                y1={inner.y}
-                x2={outer.x}
-                y2={outer.y}
-                stroke={TICK_COLOR}
-                strokeWidth={1.5}
-              />
-            </G>
+            <Line
+              key={`mn-${t}`}
+              x1={inner.x}
+              y1={inner.y}
+              x2={outer.x}
+              y2={outer.y}
+              stroke={TICK_MINOR}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+            />
           );
         })}
 
-        {/* Labels dos ticks */}
-        {ticks.map((t) => {
+        {/* Ticks maiores (0, 50, 100) - dentro do arco */}
+        {majorTicks.map((t) => {
+          const a = valueToAngle(t);
+          const inner = polar(cx, cy, r - stroke / 2 + 2, a);
+          const outer = polar(cx, cy, r + stroke / 2 - 2, a);
+          return (
+            <Line
+              key={`mj-${t}`}
+              x1={inner.x}
+              y1={inner.y}
+              x2={outer.x}
+              y2={outer.y}
+              stroke={TICK_MAJOR}
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          );
+        })}
+
+        {/* Labels: maiores apenas em 0, 50 e 100 */}
+        {majorTicks.map((t) => {
           const a = valueToAngle(t);
           const pos = polar(cx, cy, r + stroke / 2 + 14, a);
           return (
@@ -133,8 +178,9 @@ export function SpeedometerGauge({
               key={`l-${t}`}
               x={pos.x}
               y={pos.y + 4}
-              fontSize={11}
-              fill="#475569"
+              fontSize={12}
+              fontWeight="700"
+              fill={TICK_LABEL}
               textAnchor="middle"
             >
               {`${t}%`}
@@ -142,18 +188,30 @@ export function SpeedometerGauge({
           );
         })}
 
-        {/* Ponteiro */}
-        <Line
-          x1={cx}
-          y1={cy}
-          x2={needleEnd.x}
-          y2={needleEnd.y}
-          stroke={NEEDLE_COLOR}
-          strokeWidth={3}
-          strokeLinecap="round"
-        />
-        <Circle cx={cx} cy={cy} r={size * 0.04} fill={NEEDLE_COLOR} />
-        <Circle cx={cx} cy={cy} r={size * 0.018} fill="#fff" />
+        {/* Labels menores em 25 e 75 */}
+        {minorTicks.map((t) => {
+          const a = valueToAngle(t);
+          const pos = polar(cx, cy, r + stroke / 2 + 12, a);
+          return (
+            <SvgText
+              key={`lm-${t}`}
+              x={pos.x}
+              y={pos.y + 3}
+              fontSize={10}
+              fill={TICK_MINOR}
+              textAnchor="middle"
+            >
+              {`${t}`}
+            </SvgText>
+          );
+        })}
+
+        {/* Ponteiro (forma triangular) */}
+        <Polygon points={needlePoints} fill={NEEDLE_COLOR} />
+
+        {/* Pivô central */}
+        <Circle cx={cx} cy={cy} r={size * 0.028} fill={NEEDLE_COLOR} />
+        <Circle cx={cx} cy={cy} r={size * 0.012} fill="#fff" />
       </Svg>
 
       <View style={styles.centerInfo}>
@@ -182,7 +240,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   percentText: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
     color: '#0f172a',
   },

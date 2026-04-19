@@ -95,6 +95,21 @@ const MAPS: Record<string, MapDef> = {
       { from: ['nrParcelas', 'qtParcelas'], to: 'qt_parcelas' },
     ],
   },
+  'condicao-preco': {
+    table: 'condicao_preco',
+    pk: ['cd_condicao_preco', 'holding_id'],
+    needsHolding: true,
+    raw: true,
+    columns: [
+      { from: 'cdCondicaoPreco', to: 'cd_condicao_preco' },
+      { from: 'holdingId', to: 'holding_id' },
+      { from: ['dsCondicaoPreco', 'descricao'], to: 'descricao' },
+      { from: 'idPromocao', to: 'id_promocao' },
+      { from: 'prAcrescimo', to: 'pr_acrescimo' },
+      { from: 'prAcrescimoComissao', to: 'pr_acrescimo_comissao' },
+      { from: 'idTipoAcrescimo', to: 'id_tipo_acrescimo' },
+    ],
+  },
   'forma-pagamento': {
     table: 'forma_pagamento',
     pk: ['cd_forma', 'holding_id'],
