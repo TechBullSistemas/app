@@ -2,6 +2,7 @@
   "expo": {
     "name": "TechBull Vendas",
     "slug": "techbull-vendas",
+    "owner": "gugahh7",
     "version": "1.0.0",
     "orientation": "default",
     "scheme": "techbullvendas",
