@@ -8,3 +8,4 @@ web-build/
 secrets/
 *.keystore
 google-service-account*.json
+store-assets/
