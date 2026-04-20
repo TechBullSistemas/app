@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -29,6 +30,9 @@ export default function HomeScreen() {
   const router = useRouter();
   const user = useSessionStore((s) => s.user);
   const clear = useSessionStore((s) => s.clear);
+
+  const { width: windowWidth } = useWindowDimensions();
+  const layout = getResponsiveLayout(windowWidth);
 
   const [pending, setPending] = useState({ vendas: 0, visitas: 0, clientes: 0 });
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -110,26 +114,53 @@ export default function HomeScreen() {
         <OnlineBadge />
       </View>
 
-      <View style={styles.grid}>
+      <View style={[styles.grid, { gap: layout.gap }]}>
         {menu.map((m) => (
-          <Pressable key={m.label} style={styles.tile} onPress={() => go(m.href)}>
-            <View style={[styles.iconCircle, { backgroundColor: m.color }]}>
-              <Ionicons name={m.icon} size={28} color="#fff" />
+          <Pressable
+            key={m.label}
+            style={[styles.tile, { width: layout.tileSize, height: layout.tileSize }]}
+            onPress={() => go(m.href)}
+          >
+            <View
+              style={[
+                styles.iconCircle,
+                {
+                  backgroundColor: m.color,
+                  width: layout.iconCircle,
+                  height: layout.iconCircle,
+                  borderRadius: layout.iconCircle / 2,
+                },
+              ]}
+            >
+              <Ionicons name={m.icon} size={layout.iconSize} color="#fff" />
               {!!m.badge && m.badge > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{m.badge}</Text>
                 </View>
               )}
             </View>
-            <Text style={styles.tileLabel}>{m.label}</Text>
+            <Text style={[styles.tileLabel, { fontSize: layout.labelSize }]}>{m.label}</Text>
           </Pressable>
         ))}
 
-        <Pressable style={styles.tile} onPress={handleSair}>
-          <View style={[styles.iconCircle, { backgroundColor: '#dc2626' }]}>
-            <Ionicons name="exit" size={28} color="#fff" />
+        <Pressable
+          style={[styles.tile, { width: layout.tileSize, height: layout.tileSize }]}
+          onPress={handleSair}
+        >
+          <View
+            style={[
+              styles.iconCircle,
+              {
+                backgroundColor: '#dc2626',
+                width: layout.iconCircle,
+                height: layout.iconCircle,
+                borderRadius: layout.iconCircle / 2,
+              },
+            ]}
+          >
+            <Ionicons name="exit" size={layout.iconSize} color="#fff" />
           </View>
-          <Text style={styles.tileLabel}>Sair</Text>
+          <Text style={[styles.tileLabel, { fontSize: layout.labelSize }]}>Sair</Text>
         </Pressable>
       </View>
 
@@ -159,6 +190,42 @@ export default function HomeScreen() {
   );
 }
 
+const SCREEN_PADDING = 16;
+
+interface ResponsiveLayout {
+  columns: number;
+  gap: number;
+  tileSize: number;
+  iconCircle: number;
+  iconSize: number;
+  labelSize: number;
+}
+
+function getResponsiveLayout(width: number): ResponsiveLayout {
+  let columns = 3;
+  let gap = 12;
+
+  if (width >= 1200) {
+    columns = 6;
+    gap = 20;
+  } else if (width >= 900) {
+    columns = 5;
+    gap = 18;
+  } else if (width >= 600) {
+    columns = 4;
+    gap = 16;
+  }
+
+  const available = width - SCREEN_PADDING * 2 - gap * (columns - 1);
+  const tileSize = Math.floor(available / columns);
+
+  const iconCircle = Math.round(tileSize * 0.45);
+  const iconSize = Math.round(iconCircle * 0.5);
+  const labelSize = Math.max(12, Math.round(tileSize * 0.11));
+
+  return { columns, gap, tileSize, iconCircle, iconSize, labelSize };
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
   header: {
@@ -174,13 +241,10 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   tile: {
     backgroundColor: '#fff',
-    width: '31%',
-    aspectRatio: 1,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -188,9 +252,6 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -199,7 +260,6 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontWeight: '600',
     textAlign: 'center',
-    fontSize: 12,
   },
   badge: {
     position: 'absolute',
