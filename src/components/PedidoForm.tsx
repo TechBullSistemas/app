@@ -15,10 +15,13 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { ClientePicker } from '@/components/ClientePicker';
 import { ProdutoPicker } from '@/components/ProdutoPicker';
+import { TabelaPrecoPicker, type TabelaPrecoOpt } from '@/components/TabelaPrecoPicker';
 import {
   CondicaoPagtoPicker,
   CondicaoOpt,
 } from '@/components/CondicaoPagtoPicker';
+import { CondicaoPrecoPicker } from '@/components/CondicaoPrecoPicker';
+import { PrecoDetalheModal } from '@/components/PrecoDetalheModal';
 import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
 import { ProdutoRow, getProdutoById } from '@/db/repositories/produtos';
@@ -33,6 +36,18 @@ import {
 import { gerarPdfPedido, lerPdfBase64 } from '@/services/pdfVenda';
 import { enviarVendaPorEmail } from '@/api/email';
 import { extractApiErrorMessage } from '@/api/client';
+import {
+  calcularItem,
+  resolverTabelaPreco,
+  validacaoFlex,
+  validacaoVariacaoPreco,
+  listarCondicoesPrecoProduto,
+  type CondicaoPrecoOpt,
+  type ResultadoCalculoItem,
+  type ContextoCalculoItem,
+} from '@/services/pricing';
+import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
+import { getEmpresaParametros } from '@/db/repositories/parametros';
 
 // Forma de pagamento (4 = Crediário) e tipo de venda (1) fixos no app.
 const CD_FORMA_PAGAMENTO_PADRAO = 4;
@@ -43,8 +58,22 @@ interface ItemPedido {
   descricao: string;
   qt: number;
   vlUnitario: number;
+  vlUnitarioOriginal: number; // preço calculado pelo engine (sem edição manual)
   qtDisponivel: number | null;
   permiteSaldoNegativo: boolean;
+  // Condição de preço selecionada por item (legado: spn_tabela_condicao_preco).
+  // Quando definida, alimenta o pipeline (acréscimo / última venda) e estabelece
+  // o preço mínimo para a regra `idPermiteAlterarValorProdutoPalm = "A"`.
+  cdCondicaoPreco?: number | null;
+  // Descrição da condição (cache, para exibir no botão).
+  condicaoPrecoLabel?: string | null;
+  // Mínimo permitido (= vlValor da condição selecionada). Usado para impedir
+  // que o vendedor digite um valor abaixo no modo "A".
+  vlMinimo?: number | null;
+  // Resultados do motor de precificação (instantâneo offline).
+  // Só são preenchidos quando os dados de imposto/empresa estiverem sincronizados.
+  pricing?: ResultadoCalculoItem | null;
+  rawProduto?: any | null; // raw_json do produto (para alimentar o engine)
 }
 
 interface CondicaoItem {
@@ -129,6 +158,22 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [cliPickerOpen, setCliPickerOpen] = useState(false);
   const [prodPickerOpen, setProdPickerOpen] = useState(false);
   const [condPickerOpen, setCondPickerOpen] = useState(false);
+  const [tabPickerOpen, setTabPickerOpen] = useState(false);
+  // Picker de condição de preço aberto para um produto específico (cdProduto).
+  const [condPrecoOpenFor, setCondPrecoOpenFor] = useState<number | null>(null);
+  // Modal de detalhes do preço aberto para um produto específico (cdProduto).
+  const [precoDetalheFor, setPrecoDetalheFor] = useState<number | null>(null);
+  // Cache das condições de preço calculadas. Chave composta:
+  // `cdProduto|qt|cdTabelaPreco|cdCondicaoPagto|cdCliente` — qualquer
+  // mudança nesses parâmetros recalcula (espelha o legado, que chama
+  // `calculaInformacoes_getVl_unitario` toda vez com a qt e a condicao_pagto
+  // atuais; sem isso o picker fica preso em valores antigos e diverge do
+  // preço efetivo do item).
+  const [condicoesPrecoCache, setCondicoesPrecoCache] = useState<
+    Record<string, CondicaoPrecoOpt[]>
+  >({});
+  // Override manual da tabela de preço (somente quando empresa permite).
+  const [tabelaPrecoManual, setTabelaPrecoManual] = useState<TabelaPrecoOpt | null>(null);
   const [cliente, setCliente] = useState<ClienteRow | null>(null);
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [obs, setObs] = useState('');
@@ -138,6 +183,131 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [parcelasManuais, setParcelasManuais] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(isEdit);
+
+  // Parâmetros da empresa carregados uma vez para alimentar o motor de
+  // precificação. Quando ausentes (backend antigo), o motor não roda e o
+  // app cai no comportamento original (apenas vlUnitario × qt).
+  const [empresaParams, setEmpresaParams] = useState<Awaited<
+    ReturnType<typeof getEmpresaParametros>
+  > | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const params = await getEmpresaParametros(user.cdEmpresa, user.holdingId);
+        setEmpresaParams(params);
+      } catch (err) {
+        console.warn('PedidoForm: parâmetros do motor indisponíveis', err);
+      }
+    })();
+  }, [user]);
+
+  // Dados do representante vêm direto da sessão (auth/login | auth/me).
+  // Não há mais sync de tabela `representante`: tudo vive no User do ERP.
+  // IMPORTANTE: a `cdTabelaPreco` do User é independente do vínculo com
+  // Representante (que só importa para Flex/comissão). Por isso construímos
+  // o engine sempre que houver `representante` na sessão, usando
+  // `cdRepresentante = 0` como fallback quando o User não está vinculado.
+  const representanteEngine = useMemo(() => {
+    if (!user?.representante) return null;
+    return {
+      cdRepresentante: user.cdRepresentante ?? 0,
+      vlSaldoFlex: Number(user.representante.vlSaldoFlex ?? 0),
+      prFlexMin: Number(user.representante.prFlexMin ?? 0),
+      prFlexMax: Number(user.representante.prFlexMax ?? 0),
+      idMargem: (user.representante.idMargem ?? 'N') as 'S' | 'N',
+      prMargemLucroMinimo: Number(user.representante.prMargemLucroMinimo ?? 0),
+      cdTabelaPreco: user.representante.cdTabelaPreco ?? null,
+    };
+  }, [user]);
+
+  // Tabela de preço resolvida via cliente → representante → empresa padrão.
+  // Quando a empresa permite alteração manual e o vendedor escolhe uma tabela
+  // no dropdown, o override `tabelaPrecoManual` tem prioridade.
+  const cdTabelaPrecoResolvida = useMemo(() => {
+    if (tabelaPrecoManual) return tabelaPrecoManual.cd_tabela;
+    if (!empresaParams) return null;
+    return resolverTabelaPreco({
+      empresa: empresaParams,
+      cliente: cliente
+        ? { cdCliente: cliente.cd_cliente, cdTabelaPreco: (cliente as any).cd_tabela_preco ?? null }
+        : null,
+      representante: representanteEngine,
+    });
+  }, [empresaParams, cliente, representanteEngine, tabelaPrecoManual]);
+
+  // Quando o cliente muda, descarta o override manual (a tabela do novo
+  // cliente passa a valer). O vendedor pode reabrir o dropdown se quiser.
+  useEffect(() => {
+    setTabelaPrecoManual(null);
+  }, [cliente?.cd_cliente]);
+
+  // Pré-selecionar a condição de pagamento padrão do cliente (cd_condicao_pagto)
+  // ao escolher um cliente em pedidos novos. Em modo edição não sobrescreve a
+  // condição já carregada do payload. Se o vendedor já tiver escolhido uma
+  // condição manualmente, preserva.
+  useEffect(() => {
+    if (isEdit) return;
+    if (!cliente) return;
+    if (condicaoSel) return;
+    const cdCond = (cliente as any).cd_condicao_pagto;
+    if (cdCond == null) return;
+    (async () => {
+      try {
+        const db = await getDb();
+        const cond = await db.getFirstAsync<CondicaoOpt>(
+          'SELECT cd_condicao, descricao, qt_parcelas, raw_json FROM condicao_pagto WHERE cd_condicao = ?',
+          [Number(cdCond)],
+        );
+        if (cond) {
+          setCondicaoSel(cond);
+          setParcelasManuais(false);
+        }
+      } catch {
+        // ignora — usuário poderá escolher manualmente
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliente?.cd_cliente]);
+
+  // Descrição da tabela atual (para exibir no botão).
+  const [tabelaPrecoDesc, setTabelaPrecoDesc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cdTabelaPrecoResolvida) {
+      setTabelaPrecoDesc(null);
+      return;
+    }
+    if (tabelaPrecoManual && tabelaPrecoManual.cd_tabela === cdTabelaPrecoResolvida) {
+      setTabelaPrecoDesc(tabelaPrecoManual.descricao);
+      return;
+    }
+    (async () => {
+      try {
+        const db = await getDb();
+        const row = await db.getFirstAsync<{ descricao: string }>(
+          'SELECT descricao FROM tabela_preco WHERE cd_tabela = ? AND holding_id = ?',
+          [cdTabelaPrecoResolvida, user!.holdingId],
+        );
+        setTabelaPrecoDesc(row?.descricao ?? null);
+      } catch {
+        setTabelaPrecoDesc(null);
+      }
+    })();
+  }, [cdTabelaPrecoResolvida, tabelaPrecoManual, user]);
+
+  // Edição da tabela: legado deixava sempre desabilitado (TODO no fonte).
+  // Aqui respeitamos a flag `idAlteraTabelaPrecoTablet` (default "N" =
+  // somente leitura, igual ao comportamento legado).
+  const tabelaEditavel = empresaParams?.idAlteraTabelaPrecoTablet === 'S';
+
+  const precoBloqueado = empresaParams?.idBloqueiaAlteracaoPrecoTablet === 'S';
+  // Modo de alteração do preço por item (legado: id_permite_alterar_valor_produto_palm)
+  //   "S" — livre  |  "A" — só aumentar  |  "N" — readonly
+  const modoAlteracaoPreco =
+    empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
+  const precoReadonly = modoAlteracaoPreco === 'N';
+  const precoSomenteAumenta = modoAlteracaoPreco === 'A';
 
   // Envio automático por e-mail ao salvar novo pedido (não disponível em edição).
   const [enviarEmailAoSalvar, setEnviarEmailAoSalvar] = useState(false);
@@ -205,13 +375,26 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             Number(it.cdProduto),
             row.holding_id,
           );
+          let raw: any = null;
+          try {
+            raw = prod?.raw_json ? JSON.parse(prod.raw_json) : null;
+          } catch {
+            raw = null;
+          }
+          const vl = Number(it.vlUnitario) || 0;
           itensCarregados.push({
             cdProduto: Number(it.cdProduto),
             descricao: it.descricao || prod?.descricao || `Produto #${it.cdProduto}`,
             qt: Number(it.qt) || 0,
-            vlUnitario: Number(it.vlUnitario) || 0,
+            vlUnitario: vl,
+            vlUnitarioOriginal: prod?.vl_venda ?? vl,
             qtDisponivel: prod?.qt_disponivel ?? null,
             permiteSaldoNegativo: extractPermiteSaldoNegativo(prod?.raw_json),
+            rawProduto: raw,
+            cdCondicaoPreco:
+              it.cdCondicaoPreco != null ? Number(it.cdCondicaoPreco) : null,
+            condicaoPrecoLabel: it.condicaoPrecoLabel ?? null,
+            vlMinimo: it.vlMinimo != null ? Number(it.vlMinimo) : null,
           });
         }
         setItens(itensCarregados);
@@ -257,6 +440,144 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     () => itens.reduce((acc, it) => acc + it.qt * it.vlUnitario, 0),
     [itens],
   );
+
+  // Recalcula o pricing (IPI/ST/Flex/comissão) sempre que mudam itens, condição
+  // ou contexto fiscal. Mantém a UX: se o motor não estiver disponível
+  // (parâmetros não sincronizados), os itens permanecem sem `pricing`.
+  useEffect(() => {
+    if (!user || !empresaParams) return;
+    let cancelado = false;
+    (async () => {
+      const novos: Array<{ cdProduto: number; pricing: ResultadoCalculoItem | null }> = [];
+      for (const it of itens) {
+        if (it.qt <= 0 || !cdTabelaPrecoResolvida) {
+          novos.push({ cdProduto: it.cdProduto, pricing: null });
+          continue;
+        }
+        const ufEmpresa = empresaParams.cdEstado ?? user.cdEstado ?? null;
+        // O JOIN em listClientes (`SELECT c.*, ci.cd_estado AS estado`)
+        // expõe a UF como `cliente.estado` (sigla TEXT, ex.: "SC"). Antes
+        // líamos `cliente.uf`, que não existe — resultado: ufCliente
+        // sempre null e v_pr_icms_saida zerado por falta do imposto_uf.
+        const ufCliente =
+          (cliente as any)?.estado != null
+            ? String((cliente as any).estado)
+            : null;
+        const contexto: ContextoCalculoItem = {
+          empresa: empresaParams,
+          representante: representanteEngine,
+          cliente: cliente
+            ? {
+                cdCliente: cliente.cd_cliente,
+                cdEstado: ufCliente,
+                cdTabelaPreco: (cliente as any).cd_tabela_preco ?? null,
+                tpClienteVenda:
+                  ((cliente as any).tp_cliente_venda as 'C' | 'I' | 'R') ?? 'C',
+              }
+            : null,
+          ufEmpresa,
+          ufCliente,
+          cdTabelaPreco: cdTabelaPrecoResolvida,
+          cdCondicaoPreco: it.cdCondicaoPreco ?? null,
+          cdCondicaoPagto: condicaoSel?.cd_condicao ?? null,
+          hoje: new Date(),
+        };
+        try {
+          const resultado = await calcularItem({
+            produto: {
+              cdProduto: it.cdProduto,
+              dsProduto: it.descricao,
+              cdImposto: it.rawProduto?.cdImposto ?? null,
+              cdSituacaoTributaria: it.rawProduto?.cdSituacaoTributaria ?? null,
+              prIcms: Number(it.rawProduto?.prIcms ?? 0),
+              prIpi: Number(it.rawProduto?.prIpi ?? 0),
+              prMargemSubstituicao: Number(it.rawProduto?.prMargemSubstituicao ?? 0),
+              prReducaoIcms: Number(it.rawProduto?.prReducaoIcms ?? 0),
+              vlCreditoSubstituicao: Number(it.rawProduto?.vlCreditoSubstituicao ?? 0),
+              idGeraFlex: (it.rawProduto?.idGeraFlex ?? 'S') as 'S' | 'N',
+              idOrigemProduto: String(it.rawProduto?.idOrigemProduto ?? '0'),
+              prComissao: Number(it.rawProduto?.prComissao ?? 0),
+              vlCusto: 0,
+            },
+            qt: it.qt,
+            contexto,
+            vlUnitarioManual:
+              it.vlUnitario !== it.vlUnitarioOriginal ? it.vlUnitario : undefined,
+            holdingId: user.holdingId,
+          });
+          novos.push({ cdProduto: it.cdProduto, pricing: resultado });
+        } catch (err) {
+          console.warn('calcularItem falhou', err);
+          novos.push({ cdProduto: it.cdProduto, pricing: null });
+        }
+      }
+      if (cancelado) return;
+      setItens((prev) =>
+        prev.map((it) => {
+          const novo = novos.find((n) => n.cdProduto === it.cdProduto);
+          if (!novo) return it;
+          // Quando o vendedor NÃO editou manualmente o preço (vlUnitario ===
+          // vlUnitarioOriginal), sincronizamos com o resultado do motor —
+          // assim o que aparece no item é exatamente o `vlUnitarioFinal` do
+          // trace. Antes esse alinhamento não existia e o item podia ficar
+          // travado no `vlValor` da condição (sem fórmula/condicao pagto
+          // aplicadas), divergindo do trace.
+          const novoUnit = novo.pricing?.vlUnitario ?? null;
+          const editouManual = it.vlUnitario !== it.vlUnitarioOriginal;
+          if (
+            !editouManual &&
+            novoUnit != null &&
+            novoUnit > 0 &&
+            novoUnit !== it.vlUnitario
+          ) {
+            return {
+              ...it,
+              pricing: novo.pricing,
+              vlUnitario: novoUnit,
+              vlUnitarioOriginal: novoUnit,
+            };
+          }
+          return { ...it, pricing: novo.pricing };
+        }),
+      );
+    })();
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    itens
+      .map((i) => `${i.cdProduto}:${i.qt}:${i.vlUnitario}:${i.cdCondicaoPreco ?? ''}`)
+      .join('|'),
+    cdTabelaPrecoResolvida,
+    condicaoSel?.cd_condicao,
+    cliente?.cd_cliente,
+    empresaParams?.cdEmpresa,
+    representanteEngine?.cdRepresentante,
+  ]);
+
+  const totaisFiscais = useMemo(() => {
+    let totalIpi = 0;
+    let totalSt = 0;
+    let totalFlex = 0;
+    for (const it of itens) {
+      if (!it.pricing) continue;
+      totalIpi += it.pricing.vlIpi;
+      totalSt += it.pricing.vlSt;
+      totalFlex += it.pricing.vlFlex;
+    }
+    return {
+      totalIpi: round2(totalIpi),
+      totalSt: round2(totalSt),
+      totalFlex: round2(totalFlex),
+    };
+  }, [itens]);
+
+  const exibirIpi = empresaParams?.idDestacaIpi === 'S' && totaisFiscais.totalIpi > 0;
+  const exibirSt =
+    (empresaParams?.idSubstitutoTributarioIcms === 'S' ||
+      empresaParams?.idCalculaSubstituicaoTributariaSempre === 'S') &&
+    totaisFiscais.totalSt > 0;
 
   const condicaoConfig = useMemo<CondicaoConfig>(() => {
     if (!condicaoSel) return { itens: [], prAcrescimo: 0, prDesconto: 0 };
@@ -359,17 +680,38 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         );
         return;
       }
+      let raw: any = null;
+      try {
+        raw = p.raw_json ? JSON.parse(p.raw_json) : null;
+      } catch {
+        raw = null;
+      }
+      const vl = p.vl_venda ?? 0;
       setItens((prev) => [
         ...prev,
         {
           cdProduto: p.cd_produto,
           descricao: p.descricao ?? `Produto ${p.cd_produto}`,
           qt: 1,
-          vlUnitario: p.vl_venda ?? 0,
+          vlUnitario: vl,
+          vlUnitarioOriginal: vl,
           qtDisponivel: disponivel,
           permiteSaldoNegativo: permite,
+          rawProduto: raw,
         },
       ]);
+      // Carrega as condições de preço aplicáveis ao produto e seleciona uma
+      // padrão automaticamente (espelha o legado, que sempre tem uma condição
+      // pré-selecionada no spinner ao adicionar item).
+      (async () => {
+        const opts = await carregarCondicoesPreco(p.cd_produto, 1, raw);
+        if (!opts.length) return;
+        // Preferência: primeira condição não-promocional não-últimaVenda; se
+        // não houver, qualquer uma. Mantém o vlValor da condição como mínimo.
+        const padrao =
+          opts.find((o) => !o.idPromocao && !o.idUltimaVenda) ?? opts[0];
+        selecionarCondicaoPreco(p.cd_produto, padrao);
+      })();
     }
   }
 
@@ -394,11 +736,170 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     );
   }
 
+  /**
+   * Atualiza `vlUnitario` durante a digitação (onChangeText). NÃO valida o
+   * mínimo aqui: validar a cada tecla impede o vendedor de digitar valores
+   * de forma natural (ex.: ao digitar "120" o "1" sozinho seria menor que
+   * o mínimo e a trava pisaria no mín). A validação do modo "A" do legado
+   * é feita em `validarPrecoBlur` quando o input perde foco.
+   */
   function alterarPreco(cdProduto: number, vl: number) {
+    const modo = empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
+    if (modo === 'N') return; // readonly: ignora alterações
     setItens((prev) =>
       prev.map((it) =>
         it.cdProduto === cdProduto ? { ...it, vlUnitario: vl } : it,
       ),
+    );
+  }
+
+  /**
+   * Validação do legado (modelo03 PedidoTabActivity:2972-2990): no modo
+   * "A" (somente aumentar), se o vendedor terminar a edição com valor
+   * menor que `vlMinimo` (= vl_valor da condição de preço selecionada),
+   * pisa no mínimo e exibe o aviso. Disparado em `onEndEditing` (blur).
+   */
+  function validarPrecoBlur(cdProduto: number) {
+    const modo = empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
+    if (modo !== 'A') return;
+    setItens((prev) =>
+      prev.map((it) => {
+        if (it.cdProduto !== cdProduto) return it;
+        if (it.vlMinimo == null || it.vlUnitario >= it.vlMinimo) return it;
+        Alert.alert(
+          'Valor abaixo do mínimo',
+          `Permitido somente alterar para valores superiores a ${fmtMoney(
+            it.vlMinimo,
+          )}.`,
+        );
+        return { ...it, vlUnitario: it.vlMinimo };
+      }),
+    );
+  }
+
+  /**
+   * Carrega a lista de condições de preço aplicáveis a um produto e calcula
+   * o `vlValor` de cada uma com o motor — espelha
+   * `PedidoTabActivity.calculaInformacoes_*` do legado. Usa cache em memória
+   * para não recalcular toda vez que o vendedor abre o picker.
+   */
+  async function carregarCondicoesPreco(
+    cdProduto: number,
+    qt: number,
+    rawOverride?: any,
+  ) {
+    if (!user || !empresaParams || !cdTabelaPrecoResolvida) return [];
+    const cacheKey =
+      `${cdProduto}|${qt}|${cdTabelaPrecoResolvida}` +
+      `|${condicaoSel?.cd_condicao ?? ''}|${cliente?.cd_cliente ?? ''}`;
+    if (condicoesPrecoCache[cacheKey]) return condicoesPrecoCache[cacheKey];
+    try {
+      const tpi = await findTabelaPrecoItem(
+        cdTabelaPrecoResolvida,
+        cdProduto,
+        user.holdingId,
+      );
+      const precoTabela = tpi
+        ? {
+            cdTabelaPreco: tpi.cd_tabela_preco,
+            cdProduto: tpi.cd_produto,
+            vlVenda: Number(tpi.vl_venda ?? 0),
+            vlVendaAtacado: Number(tpi.vl_venda_atacado ?? 0),
+            vlPromocao: Number(tpi.vl_promocao ?? 0),
+            vlPromocaoAprazo: Number(tpi.vl_promocao_aprazo ?? 0),
+            dtPromocaoInicio: tpi.dt_promocao_inicio,
+            dtPromocaoFim: tpi.dt_promocao_fim,
+            vlCusto: Number(tpi.vl_custo ?? 0),
+            prIpi: Number(tpi.pr_ipi ?? 0),
+            prDesconto: Number(tpi.pr_desconto ?? 0),
+            prSubstituicao: Number(tpi.pr_substituicao ?? 0),
+            prMargemLucro: Number(tpi.pr_margem_lucro ?? 0),
+            prMargemExtra: Number(tpi.pr_margem_extra ?? 0),
+            prAcrescimoFinanceiro: Number(tpi.pr_acrescimo_financeiro ?? 0),
+            vlCustoSubstituicao: Number(tpi.vl_custo_substituicao ?? 0),
+            vlIcmsSubstituicao: Number(tpi.vl_icms_substituicao ?? 0),
+            vlCustoImportacao: Number(tpi.vl_custo_importacao ?? 0),
+            vlCustoContabil: Number(tpi.vl_custo_contabil ?? 0),
+            vlAquisicao: Number(tpi.vl_aquisicao ?? 0),
+            vlBonificacao: Number(tpi.vl_bonificacao ?? 0),
+            vlCustoContabilNf: Number(tpi.vl_custo_contabil_nf ?? 0),
+            vlCustoContabilMedio: Number(tpi.vl_custo_contabil_medio ?? 0),
+          }
+        : null;
+      const ufEmpresa = empresaParams.cdEstado ?? user.cdEstado ?? null;
+      // Mesma resolução de UF do useEffect — vem do JOIN com cidade.
+      const ufCliente =
+        (cliente as any)?.estado != null
+          ? String((cliente as any).estado)
+          : null;
+      // Monta a `ProdutoEngine` para que o orquestrador
+      // (`calcularItem`) consiga resolver alíquotas/imposto_uf antes da
+      // fórmula. Sem isso o `v_pr_icms_saida` ficaria 0 (caso real
+      // observado: lookup de imposto_uf nunca acontecia neste caminho).
+      const raw = rawOverride
+        ?? itens.find((i) => i.cdProduto === cdProduto)?.rawProduto
+        ?? null;
+      const produtoEng = {
+        cdProduto,
+        dsProduto: raw?.dsProduto ?? `Produto ${cdProduto}`,
+        cdImposto: raw?.cdImposto ?? null,
+        cdSituacaoTributaria: raw?.cdSituacaoTributaria ?? null,
+        prIcms: Number(raw?.prIcms ?? 0),
+        prIpi: Number(raw?.prIpi ?? 0),
+        prMargemSubstituicao: Number(raw?.prMargemSubstituicao ?? 0),
+        prReducaoIcms: Number(raw?.prReducaoIcms ?? 0),
+        vlCreditoSubstituicao: Number(raw?.vlCreditoSubstituicao ?? 0),
+        idGeraFlex: (raw?.idGeraFlex ?? 'S') as 'S' | 'N',
+        idOrigemProduto: String(raw?.idOrigemProduto ?? '0'),
+        prComissao: Number(raw?.prComissao ?? 0),
+        vlCusto: 0,
+      };
+      const opts = await listarCondicoesPrecoProduto({
+        produto: produtoEng,
+        contexto: {
+          empresa: empresaParams,
+          representante: representanteEngine,
+          cliente: cliente
+            ? {
+                cdCliente: cliente.cd_cliente,
+                cdEstado: ufCliente,
+                cdTabelaPreco: (cliente as any).cd_tabela_preco ?? null,
+                tpClienteVenda:
+                  ((cliente as any).tp_cliente_venda as 'C' | 'I' | 'R') ?? 'C',
+              }
+            : null,
+          ufEmpresa,
+          ufCliente,
+          cdTabelaPreco: cdTabelaPrecoResolvida,
+          cdCondicaoPagto: condicaoSel?.cd_condicao ?? null,
+          hoje: new Date(),
+        },
+        precoTabela,
+        qt: Math.max(qt, 1),
+        holdingId: user.holdingId,
+      });
+      setCondicoesPrecoCache((prev) => ({ ...prev, [cacheKey]: opts }));
+      return opts;
+    } catch (err) {
+      console.warn('Falha ao carregar condições de preço:', err);
+      return [];
+    }
+  }
+
+  function selecionarCondicaoPreco(cdProduto: number, opt: CondicaoPrecoOpt) {
+    setItens((prev) =>
+      prev.map((it) => {
+        if (it.cdProduto !== cdProduto) return it;
+        // Atualiza preço para o vlValor da condição selecionada e fixa o mínimo.
+        return {
+          ...it,
+          cdCondicaoPreco: opt.cdCondicaoPreco,
+          condicaoPrecoLabel: opt.descricao,
+          vlMinimo: opt.vlValor,
+          vlUnitario: opt.vlValor,
+          vlUnitarioOriginal: opt.vlValor,
+        };
+      }),
     );
   }
 
@@ -520,6 +1021,51 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       }
     }
 
+    // Validações do motor de precificação (variação de preço por item + flex
+    // do representante). Só rodam quando os parâmetros estão disponíveis;
+    // caso contrário caímos no comportamento atual sem essas regras.
+    if (empresaParams) {
+      for (const it of itens) {
+        const variacao = validacaoVariacaoPreco({
+          empresa: empresaParams,
+          representante: representanteEngine,
+          produto: {
+            cdProduto: it.cdProduto,
+            prIcms: Number(it.rawProduto?.prIcms ?? 0),
+            vlCusto: 0,
+          },
+          precoTabela: it.rawProduto
+            ? {
+                cdTabelaPreco: cdTabelaPrecoResolvida ?? 0,
+                cdProduto: it.cdProduto,
+                vlVenda: it.vlUnitarioOriginal,
+                vlCusto: 0,
+              }
+            : null,
+          vlUnitario: it.vlUnitario,
+        });
+        if (!variacao.ok) {
+          return Alert.alert(
+            `Item "${it.descricao}"`,
+            variacao.motivo ?? 'Variação de preço fora do permitido.',
+          );
+        }
+      }
+
+      if (representanteEngine) {
+        const flex = await validacaoFlex({
+          representante: representanteEngine,
+          holdingId: user.holdingId,
+          vlVenda: total,
+          vlDescontoConcedido: Math.max(0, -totaisFiscais.totalFlex),
+          vlAcrescimoConcedido: Math.max(0, totaisFiscais.totalFlex),
+        });
+        if (!flex.ok) {
+          return Alert.alert('Saldo Flex', flex.motivo ?? 'Saldo Flex insuficiente.');
+        }
+      }
+    }
+
     const diff = round2(totalParcelas - totalComAjuste);
     if (Math.abs(diff) > 0.01) {
       const ok = await new Promise<boolean>((resolve) => {
@@ -548,7 +1094,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         vlCusto: 0,
         vlUnitario: it.vlUnitario,
         vlDesconto: 0,
-        prComissao: 0,
+        prComissao: it.pricing?.prComissao ?? 0,
         vlAcrescimo: 0,
         cdFuncionario: user.userId,
         qtEntregaSeparacao: 0,
@@ -556,6 +1102,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         idProdutoPromocao: 'N',
         qtDevolvido: 0,
         vlPromocao: 0,
+        cdCondicaoPreco: it.cdCondicaoPreco ?? null,
+        // Operacional não-fiscal — controla o débito de saldo flex no ERP.
+        vlFlex: it.pricing?.vlFlex ?? 0,
       }));
 
       const prevendaTitulo = parcelas.map((p) => ({
@@ -627,6 +1176,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         prevendaTitulo,
         prevendaFormaPagamento,
         prevendaFuncionarioAuxiliar: [],
+        // Rastreabilidade comercial + saldo flex consolidado (motor mobile).
+        // Valores nulos/zero não impactam o ERP antigo (defaults preservam).
+        cdTabelaPreco: cdTabelaPrecoResolvida,
+        cdCondicaoPreco: null,
+        vlFlexTotal: totaisFiscais.totalFlex,
+        cdRepresentante: user.cdRepresentante ?? null,
       };
 
       const displayPayload = {
@@ -638,6 +1193,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           qt: it.qt,
           vlUnitario: it.vlUnitario,
           vlTotal: round2(it.qt * it.vlUnitario),
+          cdCondicaoPreco: it.cdCondicaoPreco ?? null,
+          condicaoPrecoLabel: it.condicaoPrecoLabel ?? null,
+          vlMinimo: it.vlMinimo ?? null,
         })),
         parcelas: parcelas.map((p) => ({
           numero: p.numero,
@@ -730,8 +1288,39 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       <Text style={styles.label}>Cliente</Text>
       <Pressable style={styles.field} onPress={() => setCliPickerOpen(true)}>
         <Text style={cliente ? styles.value : styles.placeholder}>
-          {cliente ? cliente.nome : 'Selecionar cliente...'}
+          {cliente
+            ? `${cliente.nome ?? `Cliente #${cliente.cd_cliente}`} (${cliente.cd_cliente})`
+            : 'Selecionar cliente...'}
         </Text>
+      </Pressable>
+
+      <Text style={styles.label}>Tabela de preço</Text>
+      <Pressable
+        style={[styles.field, !tabelaEditavel && styles.fieldDisabled]}
+        onPress={() => {
+          if (tabelaEditavel) setTabPickerOpen(true);
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flex: 1 }}>
+            <Text
+              style={cdTabelaPrecoResolvida ? styles.value : styles.placeholder}
+            >
+              {cdTabelaPrecoResolvida
+                ? `#${cdTabelaPrecoResolvida}${tabelaPrecoDesc ? ` • ${tabelaPrecoDesc}` : ''}`
+                : 'Sem tabela de preço definida'}
+            </Text>
+            {!tabelaEditavel && (
+              <Text style={styles.subtle}>
+                <Ionicons name="lock-closed" size={11} color="#64748b" />{' '}
+                Definida automaticamente pela configuração
+              </Text>
+            )}
+          </View>
+          {tabelaEditavel && (
+            <Ionicons name="chevron-forward" size={20} color="#64748b" />
+          )}
+        </View>
       </Pressable>
 
       <View style={styles.itensHeader}>
@@ -748,7 +1337,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         itens.map((it) => (
           <View key={it.cdProduto} style={styles.itemBox}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.value}>{it.descricao}</Text>
+              <Text style={styles.value}>
+                {it.descricao} ({it.cdProduto})
+              </Text>
               {it.qtDisponivel != null && (
                 <Text style={styles.subtle}>
                   Estoque: {it.qtDisponivel}
@@ -783,16 +1374,32 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                   </View>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.itemLbl}>Vl. unit.</Text>
+                  <Text style={styles.itemLbl}>
+                    Vl. unit.{precoBloqueado || precoSomenteAumenta ? ' 🔒' : ''}
+                  </Text>
                   <TextInput
-                    style={styles.itemInput}
+                    style={[
+                      styles.itemInput,
+                      (precoBloqueado || precoReadonly) && {
+                        backgroundColor: '#e2e8f0',
+                        color: '#475569',
+                      },
+                    ]}
                     keyboardType="decimal-pad"
+                    editable={!precoBloqueado && !precoReadonly}
                     value={String(it.vlUnitario)}
                     onChangeText={(t) =>
                       alterarPreco(it.cdProduto, Number(t.replace(',', '.')) || 0)
                     }
+                    onEndEditing={() => validarPrecoBlur(it.cdProduto)}
+                    onBlur={() => validarPrecoBlur(it.cdProduto)}
                     selectTextOnFocus
                   />
+                  {precoSomenteAumenta && it.vlMinimo != null && (
+                    <Text style={styles.subtle}>
+                      Mínimo {fmtMoney(it.vlMinimo)} (somente aumentar)
+                    </Text>
+                  )}
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.itemLbl}>Total</Text>
@@ -801,14 +1408,47 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                   </Text>
                 </View>
               </View>
+              {/* Condição de preço por item — espelha o spinner por linha do
+                  legado. Pré-selecionada ao adicionar o produto; pode ser
+                  trocada pelo vendedor a qualquer momento. */}
+              <Pressable
+                style={styles.condicaoPrecoBtn}
+                onPress={() => {
+                  carregarCondicoesPreco(it.cdProduto, it.qt);
+                  setCondPrecoOpenFor(it.cdProduto);
+                }}
+              >
+                <Ionicons name="pricetag-outline" size={14} color="#1e3a8a" />
+                <Text style={styles.condicaoPrecoTxt}>
+                  {it.cdCondicaoPreco
+                    ? `Cond. preço #${it.cdCondicaoPreco}${
+                        it.condicaoPrecoLabel ? ` • ${it.condicaoPrecoLabel}` : ''
+                      }${
+                        it.vlMinimo != null
+                          ? ` • ${precoSomenteAumenta ? 'mín ' : ''}${fmtMoney(it.vlMinimo)}`
+                          : ''
+                      }`
+                    : 'Selecionar condição de preço'}
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color="#64748b" />
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => removerItem(it.cdProduto)}
-              style={styles.removeBtn}
-              hitSlop={10}
-            >
-              <Ionicons name="trash" size={18} color="#dc2626" />
-            </Pressable>
+            <View style={styles.itemActions}>
+              <Pressable
+                onPress={() => setPrecoDetalheFor(it.cdProduto)}
+                style={styles.infoBtn}
+                hitSlop={10}
+              >
+                <Ionicons name="information-circle-outline" size={20} color="#1e3a8a" />
+              </Pressable>
+              <Pressable
+                onPress={() => removerItem(it.cdProduto)}
+                style={styles.removeBtn}
+                hitSlop={10}
+              >
+                <Ionicons name="trash" size={18} color="#dc2626" />
+              </Pressable>
+            </View>
           </View>
         ))
       )}
@@ -964,6 +1604,24 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           <Text style={styles.totalValue}>{fmtMoney(totalComAjuste - total)}</Text>
         </View>
       )}
+      {exibirIpi && (
+        <View style={styles.totalCard}>
+          <Text style={styles.totalLabel}>IPI (estimativa)</Text>
+          <Text style={styles.totalValue}>{fmtMoney(totaisFiscais.totalIpi)}</Text>
+        </View>
+      )}
+      {exibirSt && (
+        <View style={styles.totalCard}>
+          <Text style={styles.totalLabel}>Substituição Tributária (estimativa)</Text>
+          <Text style={styles.totalValue}>{fmtMoney(totaisFiscais.totalSt)}</Text>
+        </View>
+      )}
+      {totaisFiscais.totalFlex !== 0 && (
+        <View style={styles.totalCard}>
+          <Text style={styles.totalLabel}>Saldo Flex consumido</Text>
+          <Text style={styles.totalValue}>{fmtMoney(totaisFiscais.totalFlex)}</Text>
+        </View>
+      )}
       <View style={styles.totalCard}>
         <Text style={styles.totalLabel}>Total do pedido</Text>
         <Text style={styles.totalValue}>{fmtMoney(totalComAjuste)}</Text>
@@ -1039,6 +1697,55 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         }}
         selectedId={condicaoSel?.cd_condicao ?? null}
       />
+      <TabelaPrecoPicker
+        visible={tabPickerOpen}
+        onClose={() => setTabPickerOpen(false)}
+        onSelect={(t) => setTabelaPrecoManual(t)}
+        selectedId={cdTabelaPrecoResolvida ?? null}
+        holdingId={user!.holdingId}
+      />
+      {precoDetalheFor != null && (() => {
+        const it = itens.find((i) => i.cdProduto === precoDetalheFor);
+        if (!it) return null;
+        return (
+          <PrecoDetalheModal
+            visible
+            onClose={() => setPrecoDetalheFor(null)}
+            produto={{ cdProduto: it.cdProduto, descricao: it.descricao }}
+            qt={it.qt}
+            vlUnitarioAtual={it.vlUnitario}
+            vlUnitarioOriginal={it.vlUnitarioOriginal}
+            pricing={it.pricing}
+            cdTabelaPreco={cdTabelaPrecoResolvida}
+            tabelaPrecoDesc={tabelaPrecoDesc}
+            vlMinimo={it.vlMinimo}
+          />
+        );
+      })()}
+      <CondicaoPrecoPicker
+        visible={condPrecoOpenFor != null}
+        options={(() => {
+          if (condPrecoOpenFor == null || !cdTabelaPrecoResolvida) return [];
+          const it = itens.find((i) => i.cdProduto === condPrecoOpenFor);
+          const qtAtual = it?.qt ?? 1;
+          const k =
+            `${condPrecoOpenFor}|${qtAtual}|${cdTabelaPrecoResolvida}` +
+            `|${condicaoSel?.cd_condicao ?? ''}|${cliente?.cd_cliente ?? ''}`;
+          return condicoesPrecoCache[k] ?? [];
+        })()}
+        selectedId={
+          condPrecoOpenFor != null
+            ? (itens.find((i) => i.cdProduto === condPrecoOpenFor)
+                ?.cdCondicaoPreco ?? null)
+            : null
+        }
+        onClose={() => setCondPrecoOpenFor(null)}
+        onSelect={(opt) => {
+          if (condPrecoOpenFor != null) {
+            selecionarCondicaoPreco(condPrecoOpenFor, opt);
+          }
+        }}
+      />
     </KeyboardAwareScreen>
   );
 }
@@ -1070,6 +1777,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cbd5e1',
   },
+  fieldDisabled: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+  },
   value: { color: '#0f172a', fontWeight: '600' },
   placeholder: { color: '#94a3b8' },
   subtle: { color: '#64748b', fontSize: 12, marginTop: 2 },
@@ -1099,6 +1810,17 @@ const styles = StyleSheet.create({
   },
   itemRow: { flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'flex-end' },
   itemLbl: { fontSize: 11, color: '#64748b' },
+  condicaoPrecoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#eff6ff',
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  condicaoPrecoTxt: { flex: 1, fontSize: 12, color: '#0f172a' },
   itemInput: {
     borderWidth: 1,
     borderColor: '#cbd5e1',
@@ -1110,6 +1832,8 @@ const styles = StyleSheet.create({
   },
   itemTotal: { color: '#16a34a', fontWeight: '700' },
   removeBtn: { padding: 6 },
+  infoBtn: { padding: 6 },
+  itemActions: { gap: 4, alignItems: 'center' },
   qtdBox: {
     flexDirection: 'row',
     alignItems: 'center',

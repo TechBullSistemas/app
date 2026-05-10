@@ -18,6 +18,12 @@ export async function loginRequest(email: string, senha: string) {
   return data;
 }
 
+export async function meRequest() {
+  const api = getApi();
+  const { data } = await api.get<{ user: SessionUser }>('/auth/me');
+  return data;
+}
+
 export async function logoutRequest() {
   const api = getApi();
   try {

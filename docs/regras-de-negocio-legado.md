@@ -369,3 +369,114 @@ Arquivos consultados (relativos ao pacote `br.com.twcom.duapi`):
 - `visao/pedido/modelo03/PedidoTabActivity.java` – fluxo de pedido mais completo (cálculo de totais, IPI, ST, atualização de Flex).
 - `visao/pedido/modelo01/PedidoTabActivity2.java` – variante mais antiga, com mesma estrutura conceitual.
 - `Login.java` / `Menu.java` – hidratação dos parâmetros a partir de `empresa` e `representante`.
+
+---
+
+## 9. Mapeamento legacy → TechBull
+
+Esta seção documenta como cada regra do app legado foi portada para o TechBull (ERP Next.js + Prisma + app React Native/Expo). O port preserva o comportamento, mas substitui SQL inline e `eval` por código TypeScript tipado e seguro.
+
+### 9.1 Visão arquitetural
+
+| Camada | Legado (Duapi Mobile) | TechBull |
+| --- | --- | --- |
+| Persistência local | SQLite (`Repositorio.java`) | SQLite via `expo-sqlite` (`app/src/db/`) |
+| Persistência ERP | SQL Server + SOAP | PostgreSQL + Prisma + REST (`/api/mobile/*`) |
+| Cálculo de preço | `Util.calcula_valor_venda` em Java | `app/src/services/pricing/precoUnitario.ts` |
+| Cálculo de impostos | `f_calcula_imposto_busca_aliquota2` / `calcula_substituicao2` | `aliquotas.ts` + `substituicao.ts` |
+| Fórmula dinâmica | `eval` SQLite (`SELECT <ds_funcao>`) | `expr-eval` whitelist (`formula.ts`) |
+| Flex | `FLEX_validacao` + `Repositorio.FLEX_saldo` | `flex.ts` (repo) + `services/pricing/flex.ts` |
+| Parâmetros tipados | `Util_Parametro` | `db/repositories/parametros.ts` (`getEmpresaParametros`) |
+| Tela de pedido | `PedidoTabActivity` (Android) | `app/src/components/PedidoForm.tsx` |
+
+### 9.2 Mapeamento de tabelas/models
+
+| Legado (SQLite/Java) | TechBull Prisma | TechBull SQLite |
+| --- | --- | --- |
+| `Imposto` | `Imposto` (novo) | `imposto` (nova) |
+| `Imposto_Uf` | `ImpostoUf` (novo) | `imposto_uf` (nova) |
+| `Tabela_Icms` | `TabelaIcms` (+ `idStDiferencaIcms`) | `tabela_icms` (nova) |
+| `Tabela_Preco` / `Tabela_Preco_Item` | `TabelaPreco` / `TabelaPrecoItem` | `tabela_preco` / `tabela_preco_item` (nova) |
+| `Produto_Desconto` | `ProdutoDesconto` (novo) | `produto_desconto` (nova) |
+| `Condicao_Pagto_Preco` | `CondicaoPagtoPreco` (novo) | `condicao_pagto_preco` (nova) |
+| `Representante` | `Representante` (+ flex/margem) | `representante` (nova) |
+| `Representante_Saldo_Flex` | `RepresentanteSaldoFlex` (novo) | `representante_saldo_flex` (nova) |
+| `Flex_Movto` | `FlexMovto` (novo) | `flex_movto` (nova, outbox local) |
+| `Produto_Custo_Variavel` | `ProdutoCustoVariavel` (novo) | `produto_custo_variavel` (nova) |
+| `Condicao_Preco` (`ds_condicao_preco LIKE '%Última Venda%'`) | `CondicaoPreco.idUltimaVenda` (`Boolean`) + `vlValor` | `condicao_preco` (`id_ultima_venda`, `vl_valor`) |
+| `Empresa` (parâmetros chave/valor) | colunas tipadas em `Empresa` (ver §9.4) | `empresa` (mesmas colunas) |
+| `Pedido_Venda_Pendente` (com `pr_desconto1/2`, `vl_flex`, `vl_desconto_credito_substituicao`) | `Prevenda` + `PrevendaItem` (apenas `vlFlex`/`vlFlexTotal`/`cdTabelaPreco`/`cdCondicaoPreco`/`cdCondicaoPagto`) | outbox local `prevenda` em SQLite |
+
+> **Nota fiscal:** os campos `vlIpi`/`vlSubstituicao`/`prIcms`/`prDesconto1/2`/`vlDescontoCreditoSubstituicao` **não são persistidos** no ERP. O cálculo é feito offline para feedback ao vendedor; a NF do ERP recalcula tudo no faturamento (fonte única da verdade fiscal).
+
+### 9.3 Mapeamento de funções
+
+| Legado (`Util.java`) | TechBull |
+| --- | --- |
+| `calcula_valor_venda` (8 passos) | `services/pricing/precoUnitario.ts` → `calcularPrecoUnitario` |
+| `f_calcula_imposto_busca_aliquota2` | `services/pricing/aliquotas.ts` → `calcularAliquotas` |
+| `calcula_substituicao2` | `services/pricing/substituicao.ts` → `calcularSubstituicao` |
+| `calcula_ipi` | `services/pricing/ipi.ts` → `calcularIpi` |
+| `calcula_comissao` | `services/pricing/comissao.ts` → `calcularComissao` |
+| `FLEX_validacao` | `services/pricing/flex.ts` → `validacaoFlex` |
+| `validacaoVariacaoPreco` | `services/pricing/variacaoPreco.ts` |
+| `ds_funcao_calculo_preco_venda` (eval SQLite) | `services/pricing/formula.ts` → `avaliarFormula` (whitelist `expr-eval`) |
+| `Util_Parametro.get*` | `db/repositories/parametros.ts` → `getEmpresaParametros` |
+| `Repositorio.FLEX_saldo` | `db/repositories/flex.ts` → `getSaldoEfetivo` (consolidado + outbox + draft) |
+| Resolução de tabela de preço (cliente → representante → empresa) | `services/pricing/tabelaPrecoResolver.ts` |
+| Soma de totais (incluindo IPI/ST conforme flags) | `services/pricing/totais.ts` → `calculaTotaisPedido` |
+| `arredonda` (casas decimais empresa) | `services/pricing/casasDecimais.ts` → `roundN` |
+
+A fachada pública é `services/pricing/index.ts`, que expõe `calcularItem(produto, qt, contexto)` e `calcularPedido(itens, contexto)`.
+
+### 9.4 Novos parâmetros de `Empresa`
+
+Todos com `@default` que reproduzem o comportamento atual quando ausentes — empresas existentes continuam funcionando exatamente como antes.
+
+| Coluna | Tipo / Default | Origem legacy | Função |
+| --- | --- | --- | --- |
+| `cdEstado` | `Char(2)?` (derivado de `cidade.cdEstado` no sync) | `gs_estado_empresa` | UF da empresa para regra interno × interestadual |
+| `cdTabelaPrecoPadrao` | `Int?` | parâmetro `cd_tabela_preco_padrao` | Fallback final de tabela de preço |
+| `idDestacaIpi` | `String @default("N")` | `id_destaca_ipi` | Soma IPI no total do pedido |
+| `idSubstitutoTributarioIcms` | `String @default("N")` | `id_substituto_tributario_icms` | Empresa é substituta (não calcula ST) |
+| `idCalculaSubstituicaoTributariaSempre` | `String @default("N")` | parâmetro homônimo | Calcula ST mesmo em operações internas |
+| `idRegimeUtilizaReducaoBaseSubstituicao` | `String @default("N")` (`N`/`T`/`S`) | regime tributário | Aplica redução de base na ST |
+| `idUtilizaMvaExternoVenda` | `String @default("N")` | parâmetro homônimo | Usa MVA externa em operações interestaduais |
+| `idUtilizaStDiferencaIcms` | `String @default("N")` | parâmetro homônimo | ST por diferença de ICMS |
+| `idUtilizaReducaoIcmsForaEstado` | `String @default("N")` | parâmetro homônimo | Redução de ICMS em vendas para fora do estado |
+| `prIcmsProdutoImportadoCompraVendaForaEstado` | `Decimal(6,3) @default(0)` | parâmetro homônimo | Alíquota fixa para importados interestaduais |
+| `idUtilizaDescontoCreditoSubstituicaoVenda` | `String @default("N")` | parâmetro homônimo | Desconta crédito de ST do preço |
+| `idUtilizaDescontoPromocaoPedidoVenda` | `String @default("N")` | parâmetro homônimo | Habilita desconto promocional |
+| `idUtilizaPromocaoPorTabelaPreco` | `String @default("N")` | parâmetro homônimo | Promoções restritas à tabela de preço |
+| `idUtilizaCondicaoPagtoLigacaoCondicaoPreco` | `String @default("N")` | parâmetro homônimo | Vincula condição de pagamento à condição de preço |
+| `idEmpresaUtilizaAcrescimoCondicaoPagto` | `String @default("S")` | parâmetro homônimo | Aplica `prAcrescimo` da condição de pagamento |
+| `idProdutoControleVariacaoPreco` | `Char(1) @default("D")` | parâmetro homônimo | `M` = margem mínima, `D` = desconto máximo |
+| `prMargemLucroMinimo` | `Decimal(6,3) @default(0)` | `pr_margem_lucro_minimo` | Margem mínima permitida para o item |
+| `nrCasaDecimalValorVenda` | `Int @default(2)` | `Util_Parametro.getCasasDecimaisVlVenda` | Casas decimais no arredondamento de preço |
+| `idBloqueiaAlteracaoPrecoTablet` | `String @default("N")` | parâmetro homônimo | Trava o input de preço no `PedidoForm` |
+| `idIgnoraTabelaPrecoClienteTablet` | `String @default("N")` | parâmetro homônimo | Ignora tabela do cliente, usa do representante |
+| `dsFuncaoCalculoPrecoVenda` | `VarChar(2000)?` | coluna na `Empresa` legacy | Fórmula dinâmica de preço (avaliada por `expr-eval`) |
+| `dsFuncaoCalculoMargemLucro` | `VarChar(2000)?` | coluna na `Empresa` legacy | Fórmula dinâmica de margem |
+| `idCustoAgregado` | `Char(1) @default("N")` | parâmetro homônimo | Exposto à fórmula como `v_id_custo_agregado` |
+
+### 9.5 Endpoints novos / ajustados
+
+**Novos `/api/mobile/sync/*`:** `imposto`, `imposto-uf`, `tabela-icms`, `tabela-preco-item` (paginado), `produto-desconto` (paginado por cursor composto `cdProduto|nrItem`), `condicao-pagto-preco`, `representante`, `produto-custo-variavel`.
+
+**Estendidos:**
+
+- `sync/produto`: passou a expor `prIpi`, `cdImposto`, `idOrigemProduto`, `vlCreditoSubstituicao`, `idGeraFlex`, `prMargemSubstituicao`, `prReducaoIcms`, `cdClassificacaoFiscal`.
+- `sync/empresa`: expõe todos os flags novos + `cdEstado` (resolvido a partir de `cidade.cdEstado` quando vazio).
+- `sync/condicao-preco`: expõe `idUltimaVenda` e `vlValor`.
+- `sync/tabela-icms`: expõe `idStDiferencaIcms`.
+- `auth/login` e `auth/me`: passaram a devolver `cdRepresentante` (lookup `User → Representante` por email/holding) e `cdEstado` da empresa.
+- `upload/venda`: aceita opcionalmente `cdTabelaPreco`, `cdCondicaoPreco`, `cdCondicaoPagto`, `vlFlexTotal` no cabeçalho e `vlFlex` por item; em transação grava `FlexMovto` e atualiza `RepresentanteSaldoFlex` via `upsert` somente se `vlFlexTotal !== 0` (apps antigos sem esses campos continuam funcionando).
+
+### 9.6 Compatibilidade
+
+- Todas as colunas novas têm `@default` que reproduz o comportamento atual — empresas existentes continuam exibindo o pedido sem IPI/ST destacados, sem Flex, sem fórmula dinâmica.
+- O app legado continua válido: ele simplesmente não envia campos novos no `upload/venda` e o ERP usa os defaults.
+- A tabela `tabela-preco-item` é paginada por cursor composto para evitar payloads gigantes.
+- A engine de fórmula nunca aceita expressões fora da whitelist (`+ - * / min max if`); membros, atribuições e chamadas a globals são desativados na configuração do `Parser`.
+- O cálculo offline é apenas indicativo. A NF emitida pelo ERP recalcula todos os impostos a partir do cadastro atual — a fonte única da verdade fiscal continua sendo o ERP.
+

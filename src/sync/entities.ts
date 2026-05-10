@@ -11,6 +11,15 @@ import { bulkInsertClientes } from '@/db/repositories/clientes';
 import { bulkInsertNotas, bulkInsertTitulos } from '@/db/repositories/notas';
 import { bulkInsertVisitas } from '@/db/repositories/visitas';
 import { bulkInsertGeneric } from '@/db/repositories/auxiliares';
+import {
+  bulkInsertImpostos,
+  bulkInsertImpostoUf,
+} from '@/db/repositories/impostos';
+import { bulkInsertTabelaIcms } from '@/db/repositories/tabelaIcms';
+import { bulkInsertTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
+import { bulkInsertProdutoDesconto } from '@/db/repositories/produtoDesconto';
+import { bulkInsertCondicaoPagtoPreco } from '@/db/repositories/condicaoPagtoPreco';
+import { bulkInsertProdutoCustoVariavel } from '@/db/repositories/parametros';
 
 function aux(key: string) {
   return (items: any[], holdingIdFallback?: number) =>
@@ -38,6 +47,14 @@ export const SYNC_ENTITIES: SyncEntityDef[] = [
   { key: 'nota-fiscal-saida', endpoint: 'nota-fiscal-saida', label: 'Notas Fiscais (Vendas)', paged: true, insertFn: bulkInsertNotas },
   { key: 'titulo-receber', endpoint: 'titulo-receber', label: 'Títulos a Receber', paged: true, insertFn: bulkInsertTitulos },
   { key: 'visita', endpoint: 'visita', label: 'Visitas', paged: true, insertFn: bulkInsertVisitas },
+  // Motor de precificação
+  { key: 'imposto', endpoint: 'imposto', label: 'Impostos', paged: false, insertFn: bulkInsertImpostos },
+  { key: 'imposto-uf', endpoint: 'imposto-uf', label: 'Impostos por UF', paged: false, insertFn: bulkInsertImpostoUf },
+  { key: 'tabela-icms', endpoint: 'tabela-icms', label: 'Tabela ICMS Origem×Destino', paged: false, insertFn: (items) => bulkInsertTabelaIcms(items) },
+  { key: 'tabela-preco-item', endpoint: 'tabela-preco-item', label: 'Itens de Tabela de Preço', paged: true, insertFn: bulkInsertTabelaPrecoItem },
+  { key: 'produto-desconto', endpoint: 'produto-desconto', label: 'Faixas de Desconto por Produto', paged: true, insertFn: bulkInsertProdutoDesconto },
+  { key: 'condicao-pagto-preco', endpoint: 'condicao-pagto-preco', label: 'Acréscimos por Cond. Pagto/Preço', paged: false, insertFn: bulkInsertCondicaoPagtoPreco },
+  { key: 'produto-custo-variavel', endpoint: 'produto-custo-variavel', label: 'Custos Variáveis (Fórmula)', paged: false, insertFn: bulkInsertProdutoCustoVariavel },
 ];
 
 export const SYNC_ENTITY_KEYS = SYNC_ENTITIES.map((e) => e.key);

@@ -19,6 +19,76 @@ const MAPS: Record<string, MapDef> = {
       { from: ['nmEmpresa', 'nome', 'nmReduzido'], to: 'nome' },
       { from: ['razaoSocial', 'nmEmpresa'], to: 'razao_social' },
       { from: 'cnpj', to: 'cnpj' },
+      { from: 'cdEstado', to: 'cd_estado' },
+      { from: 'cdTabelaPrecoPadrao', to: 'cd_tabela_preco_padrao' },
+      { from: 'idDestacaIpi', to: 'id_destaca_ipi' },
+      { from: 'idSubstitutoTributarioIcms', to: 'id_substituto_tributario_icms' },
+      {
+        from: 'idCalculaSubstituicaoTributariaSempre',
+        to: 'id_calcula_substituicao_tributaria_sempre',
+      },
+      {
+        from: 'idRegimeUtilizaReducaoBaseSubstituicao',
+        to: 'id_regime_utiliza_reducao_base_substituicao',
+      },
+      { from: 'idUtilizaMvaExternoVenda', to: 'id_utiliza_mva_externo_venda' },
+      { from: 'idUtilizaStDiferencaIcms', to: 'id_utiliza_st_diferenca_icms' },
+      {
+        from: 'idUtilizaReducaoIcmsForaEstado',
+        to: 'id_utiliza_reducao_icms_fora_estado',
+      },
+      {
+        from: 'prIcmsProdutoImportadoCompraVendaForaEstado',
+        to: 'pr_icms_produto_importado_compra_venda_fora_estado',
+      },
+      {
+        from: 'idUtilizaDescontoCreditoSubstituicaoVenda',
+        to: 'id_utiliza_desconto_credito_substituicao_venda',
+      },
+      {
+        from: 'idUtilizaDescontoPromocaoPedidoVenda',
+        to: 'id_utiliza_desconto_promocao_pedido_venda',
+      },
+      {
+        from: 'idUtilizaPromocaoPorTabelaPreco',
+        to: 'id_utiliza_promocao_por_tabela_preco',
+      },
+      {
+        from: 'idUtilizaCondicaoPagtoLigacaoCondicaoPreco',
+        to: 'id_utiliza_condicao_pagto_ligacao_condicao_preco',
+      },
+      {
+        from: 'idEmpresaUtilizaAcrescimoCondicaoPagto',
+        to: 'id_empresa_utiliza_acrescimo_condicao_pagto',
+      },
+      {
+        from: 'idProdutoControleVariacaoPreco',
+        to: 'id_produto_controle_variacao_preco',
+      },
+      { from: 'prMargemLucroMinimo', to: 'pr_margem_lucro_minimo' },
+      { from: 'nrCasaDecimalValorVenda', to: 'nr_casa_decimal_valor_venda' },
+      {
+        from: 'idBloqueiaAlteracaoPrecoTablet',
+        to: 'id_bloqueia_alteracao_preco_tablet',
+      },
+      {
+        from: 'idIgnoraTabelaPrecoClienteTablet',
+        to: 'id_ignora_tabela_preco_cliente_tablet',
+      },
+      {
+        from: 'idAlteraTabelaPrecoTablet',
+        to: 'id_altera_tabela_preco_tablet',
+      },
+      {
+        from: 'idPermiteAlterarValorProdutoPalm',
+        to: 'id_permite_alterar_valor_produto_palm',
+      },
+      { from: 'dsFuncaoCalculoPrecoVenda', to: 'ds_funcao_calculo_preco_venda' },
+      {
+        from: 'dsFuncaoCalculoMargemLucro',
+        to: 'ds_funcao_calculo_margem_lucro',
+      },
+      { from: 'idCustoAgregado', to: 'id_custo_agregado' },
     ],
   },
   marca: {
@@ -93,6 +163,8 @@ const MAPS: Record<string, MapDef> = {
       { from: 'holdingId', to: 'holding_id' },
       { from: ['dsCondicaoPagto', 'descricao'], to: 'descricao' },
       { from: ['nrParcelas', 'qtParcelas'], to: 'qt_parcelas' },
+      { from: 'prAcrescimo', to: 'pr_acrescimo' },
+      { from: 'prDesconto', to: 'pr_desconto' },
     ],
   },
   'condicao-preco': {
@@ -108,6 +180,8 @@ const MAPS: Record<string, MapDef> = {
       { from: 'prAcrescimo', to: 'pr_acrescimo' },
       { from: 'prAcrescimoComissao', to: 'pr_acrescimo_comissao' },
       { from: 'idTipoAcrescimo', to: 'id_tipo_acrescimo' },
+      { from: 'idUltimaVenda', to: 'id_ultima_venda' },
+      { from: 'vlValor', to: 'vl_valor' },
     ],
   },
   'forma-pagamento': {

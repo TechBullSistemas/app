@@ -76,6 +76,45 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
           JSON.stringify(it),
         ],
       );
+
+      // UPDATE separado para os campos do motor de precificação (colunas
+      // adicionadas idempotentemente via ensureColumn). Evita reescrever o
+      // INSERT principal e mantém compatibilidade caso uma das colunas não
+      // exista ainda em bancos muito antigos.
+      try {
+        await db.runAsync(
+          `UPDATE produto SET
+             cd_imposto = ?,
+             pr_ipi = ?,
+             id_origem_produto = ?,
+             vl_credito_substituicao = ?,
+             id_gera_flex = ?,
+             pr_margem_substituicao = ?,
+             pr_reducao_icms = ?,
+             cd_classificacao_fiscal = ?,
+             cd_situacao_tributaria = ?,
+             pr_comissao = ?
+           WHERE cd_produto = ? AND holding_id = ?`,
+          [
+            it.cdImposto != null ? Number(it.cdImposto) : null,
+            Number(it.prIpi ?? 0),
+            String(it.idOrigemProduto ?? '0'),
+            Number(it.vlCreditoSubstituicao ?? 0),
+            String(it.idGeraFlex ?? 'S'),
+            Number(it.prMargemSubstituicao ?? 0),
+            Number(it.prReducaoIcms ?? 0),
+            it.cdClassificacaoFiscal ?? null,
+            it.cdSituacaoTributaria ?? null,
+            Number(it.prComissao ?? 0),
+            it.cdProduto,
+            holdingId,
+          ],
+        );
+      } catch (e) {
+        // Coluna pode ainda não existir em fluxos parciais — ignora.
+        // (ensureColumn em runMigrations garante criação no boot normal.)
+        console.warn('bulkInsertProdutos: update fiscal falhou', e);
+      }
     }
   });
 }

@@ -34,7 +34,6 @@ CREATE TABLE IF NOT EXISTS cliente (
   bairro TEXT,
   cd_cidade INTEGER,
   cep TEXT,
-  cd_vendedor INTEGER,
   id_ativo INTEGER DEFAULT 1,
   raw_json TEXT,
   PRIMARY KEY (cd_cliente, holding_id)
@@ -113,6 +112,8 @@ CREATE TABLE IF NOT EXISTS condicao_pagto (
   holding_id INTEGER NOT NULL,
   descricao TEXT,
   qt_parcelas INTEGER,
+  pr_acrescimo REAL DEFAULT 0,
+  pr_desconto REAL DEFAULT 0,
   raw_json TEXT,
   PRIMARY KEY (cd_condicao, holding_id)
 );
@@ -264,6 +265,130 @@ CREATE TABLE IF NOT EXISTS outbox_cliente (
   sent_at TEXT,
   cd_cliente_remoto INTEGER
 );
+
+-- ============================================================================
+-- Motor de precificação mobile (port das regras do app legado Duapi)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS imposto (
+  cd_imposto INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  ds_imposto TEXT,
+  PRIMARY KEY (cd_imposto, holding_id)
+);
+
+CREATE TABLE IF NOT EXISTS imposto_uf (
+  cd_imposto INTEGER NOT NULL,
+  cd_estado TEXT NOT NULL,
+  holding_id INTEGER NOT NULL,
+  pr_icms_interno REAL DEFAULT 0,
+  pr_icms_interno_revenda REAL DEFAULT 0,
+  pr_icms_interno_industria REAL DEFAULT 0,
+  pr_icms_externo REAL DEFAULT 0,
+  pr_base_substituicao_interno REAL DEFAULT 0,
+  pr_base_substituicao_externo REAL DEFAULT 0,
+  pr_reducao_base_substituicao_interno REAL DEFAULT 0,
+  pr_reducao_base_substituicao_externo REAL DEFAULT 0,
+  pr_reducao_icms_interno REAL DEFAULT 0,
+  pr_reducao_icms_externo REAL DEFAULT 0,
+  pr_pis REAL DEFAULT 0,
+  pr_cofins REAL DEFAULT 0,
+  pr_fcp REAL DEFAULT 0,
+  pr_fcp_st REAL DEFAULT 0,
+  PRIMARY KEY (cd_imposto, cd_estado, holding_id)
+);
+
+CREATE TABLE IF NOT EXISTS tabela_icms (
+  cd_estado_origem TEXT NOT NULL,
+  cd_estado_destino TEXT NOT NULL,
+  pr_icms REAL DEFAULT 0,
+  id_st_diferenca_icms TEXT DEFAULT 'N',
+  PRIMARY KEY (cd_estado_origem, cd_estado_destino)
+);
+
+CREATE TABLE IF NOT EXISTS tabela_preco_item (
+  cd_tabela_preco INTEGER NOT NULL,
+  cd_produto INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  vl_venda REAL DEFAULT 0,
+  vl_venda_atacado REAL DEFAULT 0,
+  vl_promocao REAL DEFAULT 0,
+  vl_promocao_aprazo REAL DEFAULT 0,
+  dt_promocao_inicio TEXT,
+  dt_promocao_fim TEXT,
+  vl_custo REAL DEFAULT 0,
+  pr_ipi REAL DEFAULT 0,
+  pr_desconto REAL DEFAULT 0,
+  pr_substituicao REAL DEFAULT 0,
+  pr_margem_lucro REAL DEFAULT 0,
+  pr_margem_extra REAL DEFAULT 0,
+  pr_acrescimo_financeiro REAL DEFAULT 0,
+  vl_custo_substituicao REAL DEFAULT 0,
+  vl_icms_substituicao REAL DEFAULT 0,
+  vl_custo_importacao REAL DEFAULT 0,
+  vl_custo_contabil REAL DEFAULT 0,
+  vl_aquisicao REAL DEFAULT 0,
+  vl_bonificacao REAL DEFAULT 0,
+  vl_custo_contabil_nf REAL DEFAULT 0,
+  vl_custo_contabil_medio REAL DEFAULT 0,
+  pr_pis_saida REAL DEFAULT 0,
+  pr_cofins_saida REAL DEFAULT 0,
+  PRIMARY KEY (cd_tabela_preco, cd_produto, holding_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tpi_produto ON tabela_preco_item(cd_produto, holding_id);
+
+CREATE TABLE IF NOT EXISTS produto_desconto (
+  cd_produto INTEGER NOT NULL,
+  nr_item INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  qt_produto_inicio REAL DEFAULT 0,
+  qt_produto_fim REAL DEFAULT 0,
+  pr_desconto REAL DEFAULT 0,
+  PRIMARY KEY (cd_produto, nr_item, holding_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pd_produto ON produto_desconto(cd_produto, holding_id);
+
+CREATE TABLE IF NOT EXISTS condicao_pagto_preco (
+  cd_condicao_pagto INTEGER NOT NULL,
+  cd_tabela_preco_condicao INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  pr_acrescimo REAL DEFAULT 0,
+  pr_comissao REAL DEFAULT 0,
+  id_entra_pauta TEXT DEFAULT 'N',
+  nr_ordem_pauta INTEGER DEFAULT 0,
+  PRIMARY KEY (cd_condicao_pagto, cd_tabela_preco_condicao, holding_id)
+);
+
+CREATE TABLE IF NOT EXISTS representante_saldo_flex (
+  cd_representante INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  vl_saldo_flex REAL DEFAULT 0,
+  dt_manutencao TEXT,
+  PRIMARY KEY (cd_representante, holding_id)
+);
+
+CREATE TABLE IF NOT EXISTS flex_movto (
+  nr_movto INTEGER PRIMARY KEY AUTOINCREMENT,
+  cd_empresa INTEGER NOT NULL,
+  nr_prevenda INTEGER NOT NULL,
+  id_origem TEXT DEFAULT 'V',
+  cd_representante INTEGER NOT NULL,
+  cd_produto INTEGER,
+  dt_movto TEXT,
+  id_operacao TEXT DEFAULT 'D',
+  vl_movto REAL DEFAULT 0,
+  id_tipo TEXT DEFAULT 'N',
+  holding_id INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS produto_custo_variavel (
+  cd_empresa INTEGER NOT NULL,
+  nm_variavel TEXT NOT NULL,
+  holding_id INTEGER NOT NULL,
+  pr_variavel REAL DEFAULT 0,
+  id_utilizacao TEXT DEFAULT 'F',
+  PRIMARY KEY (cd_empresa, nm_variavel, holding_id)
+);
 `;
 
 interface ColumnInfo {
@@ -296,6 +421,180 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   await db.execAsync(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_cliente_client_id ON cliente(client_id) WHERE client_id IS NOT NULL;`,
   );
+
+  // Cliente: tabela de preço preferencial usada pelo motor de precificação.
+  await ensureColumn(db, 'cliente', 'cd_tabela_preco', 'cd_tabela_preco INTEGER');
+  // Cliente: condição de pagamento padrão para pré-selecionar no pedido.
+  await ensureColumn(
+    db,
+    'cliente',
+    'cd_condicao_pagto',
+    'cd_condicao_pagto INTEGER',
+  );
+  // Cliente: tipo de cliente para venda (C=consumo, I=indústria, R=revenda).
+  // Utilizado pelo motor para escolher a alíquota de ICMS interno correta
+  // em `imposto_uf` (pr_icms_interno_revenda / pr_icms_interno_industria).
+  await ensureColumn(
+    db,
+    'cliente',
+    'tp_cliente_venda',
+    "tp_cliente_venda TEXT DEFAULT 'C'",
+  );
+
+  // ImpostoUf: alíquotas de ICMS interno por tipo de cliente. Quando o
+  // valor estiver zero o motor faz fallback para `pr_icms_interno`.
+  await ensureColumn(
+    db,
+    'imposto_uf',
+    'pr_icms_interno_revenda',
+    'pr_icms_interno_revenda REAL DEFAULT 0',
+  );
+  await ensureColumn(
+    db,
+    'imposto_uf',
+    'pr_icms_interno_industria',
+    'pr_icms_interno_industria REAL DEFAULT 0',
+  );
+
+  // CondicaoPagto: porta `pr_desconto` e `pr_acrescimo` para uso direto no
+  // pipeline de preço (legado: `cliente_condicao_pagto.getPr_desconto()`
+  // entra como subtração após o acréscimo da condição de preço).
+  await ensureColumn(
+    db,
+    'condicao_pagto',
+    'pr_acrescimo',
+    'pr_acrescimo REAL DEFAULT 0',
+  );
+  await ensureColumn(
+    db,
+    'condicao_pagto',
+    'pr_desconto',
+    'pr_desconto REAL DEFAULT 0',
+  );
+
+  // Empresa: flags do motor de precificação + UF + fórmulas dinâmicas.
+  await ensureColumn(db, 'empresa', 'cd_estado', 'cd_estado TEXT');
+  await ensureColumn(
+    db,
+    'empresa',
+    'cd_tabela_preco_padrao',
+    'cd_tabela_preco_padrao INTEGER',
+  );
+  const empresaFlags: Array<[string, string]> = [
+    ['id_destaca_ipi', "id_destaca_ipi TEXT DEFAULT 'N'"],
+    ['id_substituto_tributario_icms', "id_substituto_tributario_icms TEXT DEFAULT 'N'"],
+    [
+      'id_calcula_substituicao_tributaria_sempre',
+      "id_calcula_substituicao_tributaria_sempre TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_regime_utiliza_reducao_base_substituicao',
+      "id_regime_utiliza_reducao_base_substituicao TEXT DEFAULT 'N'",
+    ],
+    ['id_utiliza_mva_externo_venda', "id_utiliza_mva_externo_venda TEXT DEFAULT 'N'"],
+    ['id_utiliza_st_diferenca_icms', "id_utiliza_st_diferenca_icms TEXT DEFAULT 'N'"],
+    [
+      'id_utiliza_reducao_icms_fora_estado',
+      "id_utiliza_reducao_icms_fora_estado TEXT DEFAULT 'N'",
+    ],
+    [
+      'pr_icms_produto_importado_compra_venda_fora_estado',
+      'pr_icms_produto_importado_compra_venda_fora_estado REAL DEFAULT 0',
+    ],
+    [
+      'id_utiliza_desconto_credito_substituicao_venda',
+      "id_utiliza_desconto_credito_substituicao_venda TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_utiliza_desconto_promocao_pedido_venda',
+      "id_utiliza_desconto_promocao_pedido_venda TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_utiliza_promocao_por_tabela_preco',
+      "id_utiliza_promocao_por_tabela_preco TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_utiliza_condicao_pagto_ligacao_condicao_preco',
+      "id_utiliza_condicao_pagto_ligacao_condicao_preco TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_empresa_utiliza_acrescimo_condicao_pagto',
+      "id_empresa_utiliza_acrescimo_condicao_pagto TEXT DEFAULT 'S'",
+    ],
+    [
+      'id_produto_controle_variacao_preco',
+      "id_produto_controle_variacao_preco TEXT DEFAULT 'D'",
+    ],
+    ['pr_margem_lucro_minimo', 'pr_margem_lucro_minimo REAL DEFAULT 0'],
+    ['nr_casa_decimal_valor_venda', 'nr_casa_decimal_valor_venda INTEGER DEFAULT 2'],
+    [
+      'id_bloqueia_alteracao_preco_tablet',
+      "id_bloqueia_alteracao_preco_tablet TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_ignora_tabela_preco_cliente_tablet',
+      "id_ignora_tabela_preco_cliente_tablet TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_permite_alterar_valor_produto_palm',
+      "id_permite_alterar_valor_produto_palm TEXT DEFAULT 'S'",
+    ],
+    [
+      'id_altera_tabela_preco_tablet',
+      "id_altera_tabela_preco_tablet TEXT DEFAULT 'N'",
+    ],
+    ['ds_funcao_calculo_preco_venda', 'ds_funcao_calculo_preco_venda TEXT'],
+    ['ds_funcao_calculo_margem_lucro', 'ds_funcao_calculo_margem_lucro TEXT'],
+    ['id_custo_agregado', "id_custo_agregado TEXT DEFAULT 'N'"],
+  ];
+  for (const [name, ddl] of empresaFlags) {
+    await ensureColumn(db, 'empresa', name, ddl);
+  }
+
+  // Produto: campos novos do motor de precificação.
+  const produtoCols: Array<[string, string]> = [
+    ['cd_imposto', 'cd_imposto INTEGER'],
+    ['pr_ipi', 'pr_ipi REAL DEFAULT 0'],
+    ['id_origem_produto', "id_origem_produto TEXT DEFAULT '0'"],
+    ['vl_credito_substituicao', 'vl_credito_substituicao REAL DEFAULT 0'],
+    ['id_gera_flex', "id_gera_flex TEXT DEFAULT 'S'"],
+    ['pr_margem_substituicao', 'pr_margem_substituicao REAL DEFAULT 0'],
+    ['pr_reducao_icms', 'pr_reducao_icms REAL DEFAULT 0'],
+    ['cd_classificacao_fiscal', 'cd_classificacao_fiscal TEXT'],
+    // Espelho de cd_situacao_tributaria do produto (usado pela engine fiscal)
+    ['cd_situacao_tributaria', 'cd_situacao_tributaria TEXT'],
+    ['vl_custo', 'vl_custo REAL DEFAULT 0'],
+    ['pr_comissao', 'pr_comissao REAL DEFAULT 0'],
+  ];
+  for (const [name, ddl] of produtoCols) {
+    await ensureColumn(db, 'produto', name, ddl);
+  }
+
+  // CondicaoPreco: caso especial "última venda".
+  await ensureColumn(
+    db,
+    'condicao_preco',
+    'id_ultima_venda',
+    'id_ultima_venda INTEGER DEFAULT 0',
+  );
+  await ensureColumn(db, 'condicao_preco', 'vl_valor', 'vl_valor REAL DEFAULT 0');
+
+  // TabelaPrecoItem: campos de custo expostos à fórmula dinâmica.
+  const tpiCols: Array<[string, string]> = [
+    ['vl_custo_substituicao', 'vl_custo_substituicao REAL DEFAULT 0'],
+    ['vl_icms_substituicao', 'vl_icms_substituicao REAL DEFAULT 0'],
+    ['vl_custo_importacao', 'vl_custo_importacao REAL DEFAULT 0'],
+    ['vl_custo_contabil', 'vl_custo_contabil REAL DEFAULT 0'],
+    ['vl_aquisicao', 'vl_aquisicao REAL DEFAULT 0'],
+    ['vl_bonificacao', 'vl_bonificacao REAL DEFAULT 0'],
+    ['vl_custo_contabil_nf', 'vl_custo_contabil_nf REAL DEFAULT 0'],
+    ['vl_custo_contabil_medio', 'vl_custo_contabil_medio REAL DEFAULT 0'],
+    ['pr_pis_saida', 'pr_pis_saida REAL DEFAULT 0'],
+    ['pr_cofins_saida', 'pr_cofins_saida REAL DEFAULT 0'],
+  ];
+  for (const [name, ddl] of tpiCols) {
+    await ensureColumn(db, 'tabela_preco_item', name, ddl);
+  }
 }
 
 const TABLES = [
@@ -321,6 +620,16 @@ const TABLES = [
   'nota_fiscal_saida',
   'titulo_receber',
   'visita',
+  // Motor de precificação
+  'imposto',
+  'imposto_uf',
+  'tabela_icms',
+  'tabela_preco_item',
+  'produto_desconto',
+  'condicao_pagto_preco',
+  'representante_saldo_flex',
+  'flex_movto',
+  'produto_custo_variavel',
 ];
 
 export async function clearSyncTables(db: SQLite.SQLiteDatabase) {

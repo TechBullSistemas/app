@@ -18,9 +18,11 @@ export interface ClienteRow {
   bairro: string | null;
   cd_cidade: number | null;
   cep: string | null;
-  cd_vendedor: number | null;
   id_ativo: number;
   raw_json: string | null;
+  cd_tabela_preco?: number | null;
+  cd_condicao_pagto?: number | null;
+  tp_cliente_venda?: 'C' | 'I' | 'R' | string | null;
   client_id?: string | null;
   origem?: 'remoto' | 'local' | null;
   pending_sync?: number | null;
@@ -74,9 +76,9 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
       await db.runAsync(
         `INSERT OR REPLACE INTO cliente
          (cd_cliente, holding_id, nome, razao_social, cpf_cnpj, tp_pessoa, fone, celular, email,
-          endereco, numero, bairro, cd_cidade, cep, cd_vendedor, id_ativo, raw_json,
+          endereco, numero, bairro, cd_cidade, cep, id_ativo, raw_json,
           client_id, origem, pending_sync)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
         [
           it.cdCliente,
           holdingId,
@@ -92,11 +94,47 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
           it.bairro ?? null,
           cdCidade,
           it.cep ?? null,
-          it.cdVendedor ?? null,
           it.idAtivo === false ? 0 : 1,
           JSON.stringify(it),
         ],
       );
+
+      // Colunas operacionais opcionais (preço/condição preferencial) gravadas
+      // em UPDATE separado e protegidas por try/catch porque foram adicionadas
+      // via ensureColumn — em databases muito antigas podem não existir.
+      if (it.cdTabelaPreco != null) {
+        try {
+          await db.runAsync(
+            `UPDATE cliente SET cd_tabela_preco = ?
+              WHERE cd_cliente = ? AND holding_id = ?`,
+            [Number(it.cdTabelaPreco), it.cdCliente, holdingId],
+          );
+        } catch {
+          // ignora se a coluna ainda não existe
+        }
+      }
+      if (it.cdCondicaoPagto != null) {
+        try {
+          await db.runAsync(
+            `UPDATE cliente SET cd_condicao_pagto = ?
+              WHERE cd_cliente = ? AND holding_id = ?`,
+            [Number(it.cdCondicaoPagto), it.cdCliente, holdingId],
+          );
+        } catch {
+          // ignora se a coluna ainda não existe
+        }
+      }
+      if (it.tpClienteVenda != null) {
+        try {
+          await db.runAsync(
+            `UPDATE cliente SET tp_cliente_venda = ?
+              WHERE cd_cliente = ? AND holding_id = ?`,
+            [String(it.tpClienteVenda), it.cdCliente, holdingId],
+          );
+        } catch {
+          // ignora se a coluna ainda não existe
+        }
+      }
     }
   });
 }
@@ -173,9 +211,9 @@ export async function insertClienteLocal(
   await db.runAsync(
     `INSERT INTO cliente
        (cd_cliente, holding_id, nome, razao_social, cpf_cnpj, tp_pessoa, fone, celular, email,
-        endereco, numero, bairro, cd_cidade, cep, cd_vendedor, id_ativo, raw_json,
+        endereco, numero, bairro, cd_cidade, cep, id_ativo, raw_json,
         client_id, origem, pending_sync)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, 'local', 1)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, 'local', 1)`,
     [
       cdLocal,
       holdingId,
@@ -315,9 +353,9 @@ export async function remapClienteLocalToRemoto(
     await db.runAsync(
       `INSERT INTO cliente
          (cd_cliente, holding_id, nome, razao_social, cpf_cnpj, tp_pessoa, fone, celular, email,
-          endereco, numero, bairro, cd_cidade, cep, cd_vendedor, id_ativo, raw_json,
+          endereco, numero, bairro, cd_cidade, cep, id_ativo, raw_json,
           client_id, origem, pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
       [
         cdClienteRemoto,
         holdingId,
@@ -333,7 +371,6 @@ export async function remapClienteLocalToRemoto(
         local.bairro,
         local.cd_cidade,
         local.cep,
-        local.cd_vendedor,
         local.id_ativo,
         local.raw_json,
       ],
