@@ -200,13 +200,39 @@ function buildClientePayload(
   };
 }
 
+/**
+ * Limite inferior do tipo `INT4` do Postgres (`-2^31`). Cd_cliente locais
+ * MAIORES (em valor absoluto) que isso são rejeitados pelo backend ao
+ * inserir/referenciar o cliente em `prevenda.cdCliente`.
+ */
+const INT4_MIN = -2_147_483_648;
+
+/**
+ * Gera um `cd_cliente` local único e que cabe em INT4. Evita o antigo
+ * `-Date.now()` (que produz valores ≈ -1.78×10¹², estourando INT4) usando
+ * uma sequência simples baseada em `MIN(cd_cliente)` da tabela para o
+ * holding. A consulta filtra valores fora do INT4 (legado) para que dados
+ * inconsistentes não contaminem a sequência.
+ */
+async function nextLocalCdCliente(holdingId: number): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ m: number | null }>(
+    `SELECT MIN(cd_cliente) AS m
+       FROM cliente
+      WHERE holding_id = ? AND cd_cliente >= ?`,
+    [holdingId, INT4_MIN],
+  );
+  const min = row?.m ?? 0;
+  return Math.min(-1, min - 1);
+}
+
 export async function insertClienteLocal(
   holdingId: number,
   input: ClienteLocalInput,
 ): Promise<ClienteRow> {
   const db = await getDb();
   const clientId = uuidv4();
-  const cdLocal = -Date.now();
+  const cdLocal = await nextLocalCdCliente(holdingId);
 
   await db.runAsync(
     `INSERT INTO cliente

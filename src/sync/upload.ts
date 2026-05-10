@@ -131,6 +131,19 @@ export async function runUploadSync() {
   for (const v of vendasParaEnviar) {
     store.setUploadItem(v.client_id, { status: 'sending' });
     await setOutboxVendaStatus(v.client_id, 'sending');
+    // Defesa: se a venda referencia um cd_cliente local (negativo) é porque
+    // o upload do cliente associado não chegou a remapear para o cd real.
+    // Enviar agora dispararia INT4 overflow no Postgres (Prevenda.cdCliente
+    // é INT4). Marca erro claro e segue — usuário pode tentar de novo após
+    // resolver o cliente.
+    if (v.cd_cliente < 0) {
+      const msg =
+        'Cliente novo deste pedido ainda não foi sincronizado. Sincronize o cliente primeiro e tente novamente.';
+      firstError = firstError || msg;
+      await setOutboxVendaStatus(v.client_id, 'error', { lastError: msg });
+      store.setUploadItem(v.client_id, { status: 'error', message: msg });
+      continue;
+    }
     try {
       const fullPayload = JSON.parse(v.payload);
       const { __display: _ignore, ...payload } = fullPayload;
@@ -152,6 +165,14 @@ export async function runUploadSync() {
   for (const v of visitasParaEnviar) {
     store.setUploadItem(v.client_id, { status: 'sending' });
     await setOutboxVisitaStatus(v.client_id, 'sending');
+    if (v.cd_cliente < 0) {
+      const msg =
+        'Cliente novo desta visita ainda não foi sincronizado. Sincronize o cliente primeiro e tente novamente.';
+      firstError = firstError || msg;
+      await setOutboxVisitaStatus(v.client_id, 'error', { lastError: msg });
+      store.setUploadItem(v.client_id, { status: 'error', message: msg });
+      continue;
+    }
     try {
       const payload = JSON.parse(v.payload);
       await api.post('/upload/visita', {

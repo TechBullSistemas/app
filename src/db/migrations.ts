@@ -595,6 +595,116 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   for (const [name, ddl] of tpiCols) {
     await ensureColumn(db, 'tabela_preco_item', name, ddl);
   }
+
+  // Saneamento: renumera clientes locais antigos cujo `cd_cliente` ficou
+  // fora do range INT4 do Postgres (versões anteriores usavam `-Date.now()`,
+  // que ≈ -1.78×10¹² — estoura `INT4` ao referenciar em `prevenda.cdCliente`).
+  // Idempotente: roda toda inicialização e só atua quando encontra rows fora
+  // do range; após renumerar, próximas execuções não fazem nada.
+  await renumberClientesLocaisInt4(db);
+}
+
+const INT4_MIN = -2_147_483_648;
+
+async function renumberClientesLocaisInt4(db: SQLite.SQLiteDatabase) {
+  const stale = await db.getAllAsync<{
+    cd_cliente: number;
+    holding_id: number;
+  }>(`SELECT cd_cliente, holding_id FROM cliente WHERE cd_cliente < ?`, [
+    INT4_MIN,
+  ]);
+  if (stale.length === 0) return;
+
+  for (const c of stale) {
+    const oldCd = c.cd_cliente;
+    const holdingId = c.holding_id;
+
+    // Próximo cd negativo livre (já dentro do INT4) para o holding.
+    const minRow = await db.getFirstAsync<{ m: number | null }>(
+      `SELECT MIN(cd_cliente) AS m
+         FROM cliente
+        WHERE holding_id = ? AND cd_cliente >= ?`,
+      [holdingId, INT4_MIN],
+    );
+    const newCd = Math.min(-1, (minRow?.m ?? 0) - 1);
+
+    // Atualiza PK do cliente (SQLite aceita UPDATE em PK quando não há
+    // conflito; nosso schema não tem FKs reais, então é seguro).
+    await db.runAsync(
+      `UPDATE cliente SET cd_cliente = ?
+        WHERE cd_cliente = ? AND holding_id = ?`,
+      [newCd, oldCd, holdingId],
+    );
+
+    // Outbox cliente
+    await db.runAsync(
+      `UPDATE outbox_cliente SET cd_cliente_local = ?
+        WHERE cd_cliente_local = ? AND holding_id = ?`,
+      [newCd, oldCd, holdingId],
+    );
+
+    // Outbox venda — coluna + payload JSON
+    await db.runAsync(
+      `UPDATE outbox_venda SET cd_cliente = ?
+        WHERE cd_cliente = ? AND holding_id = ?`,
+      [newCd, oldCd, holdingId],
+    );
+    const vendas = await db.getAllAsync<{ client_id: string; payload: string }>(
+      `SELECT client_id, payload FROM outbox_venda
+        WHERE cd_cliente = ? AND holding_id = ?`,
+      [newCd, holdingId],
+    );
+    for (const v of vendas) {
+      try {
+        const p = JSON.parse(v.payload);
+        if (p && typeof p === 'object' && p.cdCliente === oldCd) {
+          p.cdCliente = newCd;
+          await db.runAsync(
+            `UPDATE outbox_venda SET payload = ? WHERE client_id = ?`,
+            [JSON.stringify(p), v.client_id],
+          );
+        }
+      } catch {
+        // payload inválido — ignora
+      }
+    }
+
+    // Outbox visita — coluna + payload JSON
+    await db.runAsync(
+      `UPDATE outbox_visita SET cd_cliente = ?
+        WHERE cd_cliente = ? AND holding_id = ?`,
+      [newCd, oldCd, holdingId],
+    );
+    const visitas = await db.getAllAsync<{
+      client_id: string;
+      payload: string;
+    }>(
+      `SELECT client_id, payload FROM outbox_visita
+        WHERE cd_cliente = ? AND holding_id = ?`,
+      [newCd, holdingId],
+    );
+    for (const v of visitas) {
+      try {
+        const p = JSON.parse(v.payload);
+        if (p && typeof p === 'object' && p.cdCliente === oldCd) {
+          p.cdCliente = newCd;
+          await db.runAsync(
+            `UPDATE outbox_visita SET payload = ? WHERE client_id = ?`,
+            [JSON.stringify(p), v.client_id],
+          );
+        }
+      } catch {
+        // payload inválido — ignora
+      }
+    }
+
+    // Tabela visita (referências efetivadas)
+    await db.runAsync(
+      `UPDATE visita SET cd_cliente = ?
+        WHERE cd_cliente = ? AND holding_id = ?`,
+      [newCd, oldCd, holdingId],
+    );
+  }
 }
 
 const TABLES = [
