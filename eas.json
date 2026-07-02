@@ -27,6 +27,9 @@
         "serviceAccountKeyPath": "./secrets/google-service-account.json",
         "track": "internal",
         "releaseStatus": "draft"
+      },
+      "ios": {
+        "ascAppId": "6764691592"
       }
     }
   }
