@@ -18,6 +18,8 @@ export interface ProdutoRow {
   foto_url: string | null;
   foto_local: string | null;
   raw_json: string | null;
+  id_tipo_produto?: string | null;
+  fator_venda?: number | null;
 }
 
 function pickPreco(it: any) {
@@ -93,7 +95,9 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
              pr_reducao_icms = ?,
              cd_classificacao_fiscal = ?,
              cd_situacao_tributaria = ?,
-             pr_comissao = ?
+             pr_comissao = ?,
+             id_tipo_produto = ?,
+             fator_venda = ?
            WHERE cd_produto = ? AND holding_id = ?`,
           [
             it.cdImposto != null ? Number(it.cdImposto) : null,
@@ -106,6 +110,8 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
             it.cdClassificacaoFiscal ?? null,
             it.cdSituacaoTributaria ?? null,
             Number(it.prComissao ?? 0),
+            it.idTipoProduto != null ? String(it.idTipoProduto) : null,
+            Number(it.fatorVenda ?? 0),
             it.cdProduto,
             holdingId,
           ],
@@ -119,18 +125,52 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
   });
 }
 
+// Consulta de estoque/venda: traz somente produtos físicos (id_tipo_produto
+// = 'P'). Linhas sem o campo (NULL, ex.: API antiga sem idTipoProduto) passam
+// pelo COALESCE para não sumirem do catálogo.
+const FILTRO_TIPO_PRODUTO = `COALESCE(id_tipo_produto, 'P') = 'P'`;
+
 export async function listProdutos(search?: string, limit = 100): Promise<ProdutoRow[]> {
   const db = await getDb();
   if (search && search.trim()) {
     const like = `%${search.trim()}%`;
     return db.getAllAsync<ProdutoRow>(
       `SELECT * FROM produto
-       WHERE descricao LIKE ? OR referencia LIKE ?
+       WHERE (descricao LIKE ? OR referencia LIKE ?)
+         AND ${FILTRO_TIPO_PRODUTO}
        ORDER BY descricao LIMIT ?`,
       [like, like, limit],
     );
   }
-  return db.getAllAsync<ProdutoRow>('SELECT * FROM produto ORDER BY descricao LIMIT ?', [limit]);
+  return db.getAllAsync<ProdutoRow>(
+    `SELECT * FROM produto WHERE ${FILTRO_TIPO_PRODUTO} ORDER BY descricao LIMIT ?`,
+    [limit],
+  );
+}
+
+/**
+ * Lookup em lote de descrições no catálogo local. Usado para enriquecer
+ * listas montadas a partir do raw_json das notas fiscais, cujos itens podem
+ * vir sem `dsProduto` (carga do legado).
+ */
+export async function getProdutoDescricoes(
+  cds: number[],
+  holdingId: number,
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const unicos = [...new Set(cds)].filter((cd) => Number.isFinite(cd));
+  if (!unicos.length) return out;
+  const db = await getDb();
+  const placeholders = unicos.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{ cd_produto: number; descricao: string | null }>(
+    `SELECT cd_produto, descricao FROM produto
+     WHERE holding_id = ? AND cd_produto IN (${placeholders})`,
+    [holdingId, ...unicos],
+  );
+  for (const r of rows) {
+    if (r.descricao) out.set(r.cd_produto, r.descricao);
+  }
+  return out;
 }
 
 export async function getProdutoById(cdProduto: number, holdingId: number) {

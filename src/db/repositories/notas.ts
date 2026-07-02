@@ -1,4 +1,5 @@
 import { getDb } from '../database';
+import { getProdutoDescricoes } from './produtos';
 
 export interface NotaFiscalRow {
   cd_nota: number;
@@ -167,6 +168,20 @@ export async function listProdutosCompradosCliente(
     const cur = acc.get(cd);
     if (cur) cur.vendas_count = set.size;
   }
+
+  // Itens da NF podem vir sem dsProduto (carga do legado): completa a
+  // descrição pelo catálogo local sincronizado.
+  const semDescricao = [...acc.values()]
+    .filter((p) => !p.descricao)
+    .map((p) => p.cd_produto);
+  if (semDescricao.length) {
+    const descricoes = await getProdutoDescricoes(semDescricao, holdingId);
+    for (const cd of semDescricao) {
+      const desc = descricoes.get(cd);
+      if (desc) acc.get(cd)!.descricao = desc;
+    }
+  }
+
   return Array.from(acc.values()).sort((a, b) => b.vl_total - a.vl_total);
 }
 
@@ -175,6 +190,24 @@ export interface NotaProdutoLinha {
   qt: number;
   vlUnitario: number;
   vlTotal: number;
+}
+
+/**
+ * Último preço unitário praticado de um produto para um cliente (forma de
+ * preço 'V' — `empresa.id_forma_preco_venda_produto`). As notas já vêm
+ * ordenadas por dt_emissao DESC, então a primeira linha com valor é a mais
+ * recente. Retorna null quando o cliente nunca comprou o produto.
+ */
+export async function getUltimaVendaProdutoCliente(
+  cdCliente: number,
+  holdingId: number,
+  cdProduto: number,
+): Promise<number | null> {
+  const linhas = await listNotasByClienteProduto(cdCliente, holdingId, cdProduto);
+  for (const l of linhas) {
+    if (l.vlUnitario > 0) return l.vlUnitario;
+  }
+  return null;
 }
 
 export async function listNotasByClienteProduto(

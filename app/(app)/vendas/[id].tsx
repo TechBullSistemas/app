@@ -9,6 +9,7 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 
 import { getNotaById, NotaFiscalRow } from '@/db/repositories/notas';
+import { getProdutoDescricoes } from '@/db/repositories/produtos';
 import { getDb } from '@/db/database';
 
 interface ItemNota {
@@ -106,6 +107,19 @@ export default function VendaDetalhe() {
         return;
       }
       const p = parseNota(n);
+
+      // Itens da NF podem vir sem dsProduto (carga do legado): completa a
+      // descrição pelo catálogo local sincronizado.
+      const semDescricao = p.itens
+        .filter((it) => !it.dsProduto)
+        .map((it) => it.cdProduto);
+      if (semDescricao.length) {
+        const descricoes = await getProdutoDescricoes(semDescricao, holdingId);
+        for (const it of p.itens) {
+          if (!it.dsProduto) it.dsProduto = descricoes.get(it.cdProduto) ?? null;
+        }
+      }
+
       setNota(n);
       setParsed(p);
 
@@ -168,7 +182,7 @@ export default function VendaDetalhe() {
                 {it.dsProduto ?? `Produto ${it.cdProduto}`}
               </Text>
               <Text style={styles.itemSub}>
-                {it.qtProduto} {it.dsUnidade ?? 'un'} × {fmtMoney(it.vlUnitario)}
+                #{it.cdProduto} • {it.qtProduto} {it.dsUnidade ?? 'un'} × {fmtMoney(it.vlUnitario)}
               </Text>
               <Text style={styles.itemTotal}>
                 {fmtMoney(it.qtProduto * it.vlUnitario - it.vlDesconto + it.vlAcrescimo)}

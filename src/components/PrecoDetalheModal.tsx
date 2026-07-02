@@ -354,7 +354,10 @@ export function PrecoDetalheModal({
                                   {typeof v === 'number' && Number.isFinite(v)
                                     ? v.toLocaleString('pt-BR', {
                                         minimumFractionDigits: 0,
-                                        maximumFractionDigits: 4,
+                                        // 8 casas: custos contábeis/aquisição
+                                        // são armazenados com essa precisão e
+                                        // entram inteiros no cálculo.
+                                        maximumFractionDigits: 8,
                                       })
                                     : String(v)}
                                 </Text>

@@ -25,6 +25,8 @@ import { findCondicaoPagtoPreco } from '@/db/repositories/condicaoPagtoPreco';
 import { findCondicaoPreco } from '@/db/repositories/condicaoPreco';
 import { findCondicaoPagto } from '@/db/repositories/condicaoPagto';
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
+import { listCustoVariavel } from '@/db/repositories/parametros';
+import { getUltimaVendaProdutoCliente } from '@/db/repositories/notas';
 
 export interface CalcularItemInput {
   produto: ProdutoEngine;
@@ -183,6 +185,50 @@ export async function calcularItem(
         idEntraPauta: (c.id_entra_pauta ?? 'N') as 'S' | 'N',
         nrOrdemPauta: Number(c.nr_ordem_pauta),
       };
+    }
+  }
+
+  // Custos variáveis da fórmula (produto_custo_variavel): cada linha vira uma
+  // variável de contexto com o nome cadastrado em `nm_variavel` (ex.:
+  // `custo_fixo`, `comissao`) e o percentual em `pr_variavel`. No legado esses
+  // nomes eram interpolados na SQL dinâmica da empresa; aqui entram no spread
+  // do contexto da fórmula. Carrega uma única vez por contexto (reutilizado em
+  // `calcularPedido`), mesmo quando não há linhas ({} evita novo SELECT).
+  if (
+    !contexto.custoVariaveis &&
+    empresa.idFormaPrecoVendaProduto === 'M' &&
+    empresa.dsFuncaoCalculoPrecoVenda
+  ) {
+    const vars: Record<string, number> = {};
+    try {
+      const rows = await listCustoVariavel(empresa.cdEmpresa, holdingId);
+      for (const r of rows) {
+        vars[r.nm_variavel] = safeNumber(r.pr_variavel);
+      }
+    } catch {
+      // Tabela ainda não sincronizada → fórmula segue com variáveis em zero.
+    }
+    contexto.custoVariaveis = vars;
+  }
+
+  // Forma de preço 'V' (id_forma_preco_venda_produto): último unitário
+  // praticado do produto para o cliente, extraído das notas locais. Resolvido
+  // a cada item (sem guard de cache — o contexto é compartilhado entre itens
+  // do pedido e o valor é por produto). Null = primeira venda → o pipeline
+  // segue com o preço da tabela.
+  if (empresa.idFormaPrecoVendaProduto === 'V') {
+    contexto.vlUltimaVendaProduto = null;
+    const cdCliente = contexto.cliente?.cdCliente;
+    if (cdCliente) {
+      try {
+        contexto.vlUltimaVendaProduto = await getUltimaVendaProdutoCliente(
+          cdCliente,
+          holdingId,
+          produto.cdProduto,
+        );
+      } catch {
+        // Notas ainda não sincronizadas → trata como primeira venda.
+      }
     }
   }
 

@@ -183,6 +183,68 @@ export async function calcularPrecoUnitario(
     };
   }
 
+  // Forma de preço 'V' (empresa.id_forma_preco_venda_produto): usa o último
+  // unitário praticado do produto para o cliente (resolvido pelo orquestrador
+  // em `contexto.vlUltimaVendaProduto`). Sem venda anterior (null/0), segue o
+  // pipeline normal da tabela de preço.
+  const vlUltimaVendaProduto = safeNumber(contexto.vlUltimaVendaProduto);
+  if (empresa.idFormaPrecoVendaProduto === 'V' && vlUltimaVendaProduto > 0) {
+    const v = roundN(vlUltimaVendaProduto, decimais);
+    return {
+      vlBase: v,
+      vlUnitario: v,
+      vlDescontoUnit: 0,
+      prDescontoFaixa: 0,
+      origem: 'ultima-venda',
+      avisos,
+      trace: {
+        cdTabelaPreco: contexto.cdTabelaPreco ?? null,
+        vlVendaTabela: safeNumber(precoTabela?.vlVenda),
+        vlPromocaoTabela: safeNumber(precoTabela?.vlPromocao),
+        promocaoValida: false,
+        vlBase: v,
+        origem: 'ultima-venda',
+        cdCondicaoPreco: cp?.cdCondicaoPreco ?? null,
+        prAcrescimoCondicao: 0,
+        vlAposAcrescimoCondicao: v,
+        cdCondicaoPagto: contexto.cdCondicaoPagto ?? null,
+        prDescontoCondicaoPagto: 0,
+        prAcrescimoCondicaoPagto: 0,
+        vlAposAcrescimoCondicaoPagto: v,
+        prDescontoFaixa: 0,
+        vlDescontoFaixa: 0,
+        vlAposDescontoFaixa: v,
+        formulaAplicada: false,
+        vlAposFormula: null,
+        formulaExpr: empresa.dsFuncaoCalculoPrecoVenda ?? null,
+        formulaVars: null,
+        formulaErro: null,
+        formulaGateMotivo:
+          "id_forma_preco_venda_produto='V' — última venda do produto para o cliente.",
+        decimais,
+        vlUnitarioFinal: v,
+        prPisSaida: 0,
+        prPisSaidaOrigem: 'zero',
+        prCofinsSaida: 0,
+        prCofinsSaidaOrigem: 'zero',
+        prIcmsSaida: safeNumber(contexto.prIcmsSaida),
+        prIcmsSaidaOrigem:
+          safeNumber(contexto.prIcmsSaida) > 0 ? 'aliquotas' : 'zero',
+        ufEmpresa: contexto.ufEmpresa ?? null,
+        ufCliente: contexto.ufCliente ?? null,
+        impostoUfEncontrado: !!contexto.impostoUf,
+        prIcmsTabelaIcms: contexto.prIcmsTabela ?? null,
+        tpClienteVenda: contexto.cliente?.tpClienteVenda ?? null,
+        prIcmsInternoConsumo: contexto.impostoUf?.prIcmsInterno ?? null,
+        prIcmsInternoRevenda: contexto.impostoUf?.prIcmsInternoRevenda ?? null,
+        prIcmsInternoIndustria:
+          contexto.impostoUf?.prIcmsInternoIndustria ?? null,
+        prIcmsInternoEscolhido: contexto.prIcmsInternoEscolhido ?? null,
+        fonteIcmsInterno: contexto.fonteIcmsInterno ?? null,
+      },
+    };
+  }
+
   // Passo 1 — Base: vl_promocao quando a CondicaoPreco é promoção
   // (id_promocao='S') E a empresa habilita promo por tabela E há janela
   // vigente. Caso contrário, vlVenda. Replica o `case when` do
@@ -307,8 +369,9 @@ export async function calcularPrecoUnitario(
 
   // Passo 8 — Fórmula dinâmica.
   //
-  // Gate (esclarecido pelo usuário): a fórmula roda sempre que
-  //   empresa.id_custo_agregado = 'F' e há `ds_funcao_calculo_preco_venda`.
+  // Gate: a fórmula roda quando `empresa.id_forma_preco_venda_produto = 'M'`
+  // (margem) e há `ds_funcao_calculo_preco_venda` cadastrada. Nos modos 'T'
+  // (tabela de preço) e 'V' (última venda) a fórmula nunca roda.
   //
   // O `condicao_preco.id_tipo_acrescimo` NÃO gateia a fórmula — ele só decide
   // a fonte da margem usada como input:
@@ -319,13 +382,19 @@ export async function calcularPrecoUnitario(
   //   - 'V'/'N'/sem condição → `v_pr_margem_lucro = tabela_preco_item.pr_margem_lucro`
   //            (margem cadastrada no preço×tabela). O acréscimo direto do tipo
   //            'V' já foi aplicado no Passo 3.
+  const formaPreco = empresa.idFormaPrecoVendaProduto ?? 'T';
   const formulaGateAtende =
-    !!empresa.dsFuncaoCalculoPrecoVenda && empresa.idCustoAgregado === 'F';
+    formaPreco === 'M' && !!empresa.dsFuncaoCalculoPrecoVenda;
   let formulaGateMotivo: string | null = null;
-  if (!empresa.dsFuncaoCalculoPrecoVenda) {
+  if (formaPreco === 'T') {
+    formulaGateMotivo =
+      "id_forma_preco_venda_produto='T' — preço direto da tabela de preço.";
+  } else if (formaPreco === 'V') {
+    // Chegou aqui sem short-circuit → cliente nunca comprou o produto.
+    formulaGateMotivo =
+      "id_forma_preco_venda_produto='V' — primeira venda do produto para o cliente, usando tabela de preço.";
+  } else if (!empresa.dsFuncaoCalculoPrecoVenda) {
     formulaGateMotivo = 'Empresa sem `ds_funcao_calculo_preco_venda` cadastrado.';
-  } else if (empresa.idCustoAgregado !== 'F') {
-    formulaGateMotivo = `idCustoAgregado='${empresa.idCustoAgregado}' (precisa ser 'F').`;
   }
   if (formulaGateAtende) {
     // Em modo 'M' a margem da condição substitui a da tabela; nos demais
@@ -339,6 +408,13 @@ export async function calcularPrecoUnitario(
         ? safeNumber(cp?.prAcrescimo)
         : safeNumber(precoTabela?.prMargemLucro);
     const ctx = {
+      // Custos variáveis do cadastro (produto_custo_variavel) entram PRIMEIRO:
+      // eles só alimentam variáveis que o motor não calcula (ex.: custo_fixo,
+      // comissao, v_pr_politica_comercial). Há clientes com linhas cadastradas
+      // para nomes que o motor calcula (v_vl_contabil, v_pr_margem_lucro...)
+      // com pr_variavel = 0 — se o spread viesse por último, esses zeros
+      // sobrescreveriam os valores reais e quebrariam a fórmula.
+      ...(contexto.custoVariaveis ?? {}),
       v_vl_venda: safeNumber(precoTabela?.vlVenda),
       v_vl_promocao: safeNumber(precoTabela?.vlPromocao),
       v_vl_custo: safeNumber(precoTabela?.vlCusto),
@@ -353,7 +429,11 @@ export async function calcularPrecoUnitario(
       v_pr_pis_saida: prPisSaidaTrace,
       v_pr_cofins_saida: prCofinsSaidaTrace,
       v_pr_icms_saida: prIcmsSaidaTrace,
-      v_pr_acrescimo_condicao: safeNumber(cp?.prAcrescimo),
+      // Acréscimo da CONDIÇÃO DE PAGAMENTO (condicao_pagto.pr_acrescimo).
+      // Antes vinha da condição de preço, mas o correto é o acréscimo da
+      // condição de pagamento entrar aqui como variável da fórmula — ele não
+      // é mais aplicado sobre o total/parcelas do pedido.
+      v_pr_acrescimo_condicao: safeNumber(cPagto?.prAcrescimo),
       v_pr_desconto_faixa: prDescontoFaixa,
       v_qt: qt,
       v_pr_margem_lucro: vMargemLucro,
@@ -369,7 +449,6 @@ export async function calcularPrecoUnitario(
       v_vl_bonificacao: safeNumber(precoTabela?.vlBonificacao),
       v_vl_custo_contabil_nf: safeNumber(precoTabela?.vlCustoContabilNf),
       v_vl_custo_contabil_medio: safeNumber(precoTabela?.vlCustoContabilMedio),
-      ...(contexto.custoVariaveis ?? {}),
     };
     formulaVarsTrace = { ...ctx };
     const out = avaliarFormula(empresa.dsFuncaoCalculoPrecoVenda, ctx);

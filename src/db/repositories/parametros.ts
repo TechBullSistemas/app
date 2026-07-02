@@ -38,6 +38,11 @@ export interface EmpresaParametros {
   // 'F' é o gate principal de `f_calcula_margem_lucro_item` para rodar
   // `ds_funcao_calculo_preco_venda`.
   idCustoAgregado: 'S' | 'N' | 'F';
+  // Forma do preço de venda do produto:
+  //   'T' = tabela de preço (pipeline padrão, fórmula não roda),
+  //   'V' = última venda do produto para o cliente (fallback: tabela),
+  //   'M' = margem — usa a fórmula `ds_funcao_calculo_preco_venda`.
+  idFormaPrecoVendaProduto: 'T' | 'V' | 'M';
 }
 
 const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
@@ -66,6 +71,7 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
   idCustoAgregado: 'N',
+  idFormaPrecoVendaProduto: 'T',
 };
 
 function s(v: unknown, fallback: any): any {
@@ -185,6 +191,10 @@ export async function getEmpresaParametros(
       DEFAULTS.dsFuncaoCalculoMargemLucro,
     ),
     idCustoAgregado: s(row.id_custo_agregado, DEFAULTS.idCustoAgregado),
+    idFormaPrecoVendaProduto: s(
+      row.id_forma_preco_venda_produto,
+      DEFAULTS.idFormaPrecoVendaProduto,
+    ),
   };
 }
 

@@ -546,6 +546,13 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     ['ds_funcao_calculo_preco_venda', 'ds_funcao_calculo_preco_venda TEXT'],
     ['ds_funcao_calculo_margem_lucro', 'ds_funcao_calculo_margem_lucro TEXT'],
     ['id_custo_agregado', "id_custo_agregado TEXT DEFAULT 'N'"],
+    // Forma de definição do preço de venda do produto:
+    //   'T' = tabela de preço, 'V' = última venda produto×cliente,
+    //   'M' = margem (fórmula ds_funcao_calculo_preco_venda).
+    [
+      'id_forma_preco_venda_produto',
+      "id_forma_preco_venda_produto TEXT DEFAULT 'T'",
+    ],
   ];
   for (const [name, ddl] of empresaFlags) {
     await ensureColumn(db, 'empresa', name, ddl);
@@ -565,10 +572,34 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     ['cd_situacao_tributaria', 'cd_situacao_tributaria TEXT'],
     ['vl_custo', 'vl_custo REAL DEFAULT 0'],
     ['pr_comissao', 'pr_comissao REAL DEFAULT 0'],
+    // Tipo do produto ('P' = produto físico; outros: serviço etc.). Usado
+    // para filtrar a consulta de estoque/seleção de venda.
+    ['id_tipo_produto', 'id_tipo_produto TEXT'],
+    // Fator de venda: quantidade mínima/múltiplo usado como qt inicial e
+    // passo de incremento ao adicionar o item no pedido.
+    ['fator_venda', 'fator_venda REAL DEFAULT 0'],
   ];
   for (const [name, ddl] of produtoCols) {
     await ensureColumn(db, 'produto', name, ddl);
   }
+
+  // Backfill dos campos novos do produto a partir do raw_json já sincronizado
+  // (evita exigir re-sync completo para os dados existentes aparecerem).
+  // Idempotente: só atualiza linhas ainda nulas/zeradas.
+  await db.execAsync(`
+    UPDATE produto
+       SET id_tipo_produto = json_extract(raw_json, '$.idTipoProduto')
+     WHERE id_tipo_produto IS NULL
+       AND raw_json IS NOT NULL
+       AND json_extract(raw_json, '$.idTipoProduto') IS NOT NULL;
+  `);
+  await db.execAsync(`
+    UPDATE produto
+       SET fator_venda = CAST(json_extract(raw_json, '$.fatorVenda') AS REAL)
+     WHERE (fator_venda IS NULL OR fator_venda = 0)
+       AND raw_json IS NOT NULL
+       AND json_extract(raw_json, '$.fatorVenda') IS NOT NULL;
+  `);
 
   // CondicaoPreco: caso especial "última venda".
   await ensureColumn(

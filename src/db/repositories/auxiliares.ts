@@ -89,6 +89,10 @@ const MAPS: Record<string, MapDef> = {
         to: 'ds_funcao_calculo_margem_lucro',
       },
       { from: 'idCustoAgregado', to: 'id_custo_agregado' },
+      {
+        from: 'idFormaPrecoVendaProduto',
+        to: 'id_forma_preco_venda_produto',
+      },
     ],
   },
   marca: {

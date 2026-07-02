@@ -311,7 +311,7 @@ export default function ClienteDetalhe() {
                         {p.descricao ?? `Produto ${p.cd_produto}`}
                       </Text>
                       <Text style={styles.linhaItemSub}>
-                        Qtd. {p.qt_total} • {p.vendas_count} venda
+                        #{p.cd_produto} • Qtd. {p.qt_total} • {p.vendas_count} venda
                         {p.vendas_count !== 1 ? 's' : ''}
                       </Text>
                     </View>

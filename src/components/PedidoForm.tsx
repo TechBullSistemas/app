@@ -61,6 +61,9 @@ interface ItemPedido {
   vlUnitarioOriginal: number; // preço calculado pelo engine (sem edição manual)
   qtDisponivel: number | null;
   permiteSaldoNegativo: boolean;
+  // Fator de venda do produto (produto.fator_venda): quantidade inicial ao
+  // adicionar o item e passo dos botões +/- de quantidade. Default 1.
+  fatorVenda: number;
   // Condição de preço selecionada por item (legado: spn_tabela_condicao_preco).
   // Quando definida, alimenta o pipeline (acréscimo / última venda) e estabelece
   // o preço mínimo para a regra `idPermiteAlterarValorProdutoPalm = "A"`.
@@ -81,9 +84,11 @@ interface CondicaoItem {
   nrDias: number;
 }
 
+// O `pr_acrescimo` da condição de pagamento NÃO entra aqui: ele é aplicado
+// no preço unitário via fórmula dinâmica (variável `v_pr_acrescimo_condicao`),
+// não sobre o total/parcelas do pedido.
 interface CondicaoConfig {
   itens: CondicaoItem[];
-  prAcrescimo: number;
   prDesconto: number;
 }
 
@@ -390,6 +395,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             vlUnitarioOriginal: prod?.vl_venda ?? vl,
             qtDisponivel: prod?.qt_disponivel ?? null,
             permiteSaldoNegativo: extractPermiteSaldoNegativo(prod?.raw_json),
+            fatorVenda: extractFatorVenda(prod?.fator_venda, prod?.raw_json),
             rawProduto: raw,
             cdCondicaoPreco:
               it.cdCondicaoPreco != null ? Number(it.cdCondicaoPreco) : null,
@@ -580,7 +586,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     totaisFiscais.totalSt > 0;
 
   const condicaoConfig = useMemo<CondicaoConfig>(() => {
-    if (!condicaoSel) return { itens: [], prAcrescimo: 0, prDesconto: 0 };
+    if (!condicaoSel) return { itens: [], prDesconto: 0 };
     let parsed: any = null;
     try {
       parsed = condicaoSel.raw_json ? JSON.parse(condicaoSel.raw_json) : null;
@@ -608,16 +614,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
     return {
       itens: parcelasCfg,
-      prAcrescimo: Number(parsed?.prAcrescimo) || 0,
       prDesconto: Number(parsed?.prDesconto) || 0,
     };
   }, [condicaoSel]);
 
   const totalComAjuste = useMemo(() => {
-    const fator =
-      1 +
-      (condicaoConfig.prAcrescimo || 0) / 100 -
-      (condicaoConfig.prDesconto || 0) / 100;
+    const fator = 1 - (condicaoConfig.prDesconto || 0) / 100;
     return round2(total * fator);
   }, [total, condicaoConfig]);
 
@@ -658,8 +660,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     const exist = itens.find((it) => it.cdProduto === p.cd_produto);
     const permite = extractPermiteSaldoNegativo(p.raw_json);
     const disponivel = p.qt_disponivel ?? null;
+    // Quantidade inicial e passo de incremento seguem o fator de venda do
+    // produto (produto.fator_venda; default 1).
+    const fator = extractFatorVenda(p.fator_venda, p.raw_json);
     if (exist) {
-      const nova = exist.qt + 1;
+      const nova = exist.qt + fator;
       if (!permite && disponivel != null && nova > disponivel) {
         Alert.alert(
           'Estoque insuficiente',
@@ -673,10 +678,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         ),
       );
     } else {
-      if (!permite && disponivel != null && disponivel < 1) {
+      if (!permite && disponivel != null && disponivel < fator) {
         Alert.alert(
           'Estoque insuficiente',
-          `O produto "${p.descricao}" não possui saldo em estoque.`,
+          `O produto "${p.descricao}" possui apenas ${disponivel} em estoque.`,
         );
         return;
       }
@@ -692,11 +697,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         {
           cdProduto: p.cd_produto,
           descricao: p.descricao ?? `Produto ${p.cd_produto}`,
-          qt: 1,
+          qt: fator,
           vlUnitario: vl,
           vlUnitarioOriginal: vl,
           qtDisponivel: disponivel,
           permiteSaldoNegativo: permite,
+          fatorVenda: fator,
           rawProduto: raw,
         },
       ]);
@@ -704,7 +710,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       // padrão automaticamente (espelha o legado, que sempre tem uma condição
       // pré-selecionada no spinner ao adicionar item).
       (async () => {
-        const opts = await carregarCondicoesPreco(p.cd_produto, 1, raw);
+        const opts = await carregarCondicoesPreco(p.cd_produto, fator, raw);
         if (!opts.length) return;
         // Preferência: primeira condição não-promocional não-últimaVenda; se
         // não houver, qualquer uma. Mantém o vlValor da condição como mínimo.
@@ -1130,15 +1136,16 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       const vlTotalSalvar = round2(total - vlDescontoTotal + vlAcrescimoTotal);
       const vlBrutoSalvar = vlTotalSalvar;
 
-      // Percentuais: priorizam o cadastro da condição. Se o usuário editou
-      // parcelas e o ajuste real divergir, recalcula o % baseado no efetivo
-      // (assim o registro fica consistente com vlAcrescimoTotal).
-      const prAcrescimoCfg = condicaoConfig.prAcrescimo || 0;
+      // Percentuais: o desconto prioriza o cadastro da condição. O acréscimo
+      // da condição de pagamento NÃO gera ajuste no total (entra no preço
+      // unitário via fórmula); só existe vlAcrescimoTotal quando o usuário
+      // editou parcelas manualmente acima do total — nesse caso recalcula o %
+      // efetivo para manter o registro consistente.
       const prDescontoCfg = condicaoConfig.prDesconto || 0;
       const prAcrescimo =
         vlAcrescimoTotal > 0 && vlBrutoSalvar > 0
           ? round2((vlAcrescimoTotal / vlBrutoSalvar) * 100)
-          : prAcrescimoCfg;
+          : 0;
       const prDesconto =
         vlDescontoTotal > 0 && total > 0
           ? round2((vlDescontoTotal / total) * 100)
@@ -1352,7 +1359,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                   <View style={styles.qtdBox}>
                     <Pressable
                       style={styles.qtdBtn}
-                      onPress={() => alterarQtd(it.cdProduto, Math.max(0, it.qt - 1))}
+                      onPress={() =>
+                        alterarQtd(
+                          it.cdProduto,
+                          Math.max(0, it.qt - (it.fatorVenda || 1)),
+                        )
+                      }
                     >
                       <Ionicons name="remove" size={18} color="#fff" />
                     </Pressable>
@@ -1367,7 +1379,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     />
                     <Pressable
                       style={styles.qtdBtn}
-                      onPress={() => alterarQtd(it.cdProduto, it.qt + 1)}
+                      onPress={() =>
+                        alterarQtd(it.cdProduto, it.qt + (it.fatorVenda || 1))
+                      }
                     >
                       <Ionicons name="add" size={18} color="#fff" />
                     </Pressable>
@@ -1466,9 +1480,6 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
               <Text style={styles.subtle}>
                 {condicaoConfig.itens.length}{' '}
                 {condicaoConfig.itens.length === 1 ? 'parcela' : 'parcelas'}
-                {condicaoConfig.prAcrescimo > 0
-                  ? ` • acréscimo ${condicaoConfig.prAcrescimo}%`
-                  : ''}
                 {condicaoConfig.prDesconto > 0
                   ? ` • desconto ${condicaoConfig.prDesconto}%`
                   : ''}
@@ -1594,12 +1605,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         <Text style={styles.totalLabel}>Subtotal</Text>
         <Text style={styles.totalValue}>{fmtMoney(total)}</Text>
       </View>
-      {(condicaoConfig.prAcrescimo > 0 || condicaoConfig.prDesconto > 0) && (
+      {condicaoConfig.prDesconto > 0 && (
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>
-            {condicaoConfig.prAcrescimo > 0
-              ? `Acréscimo (${condicaoConfig.prAcrescimo}%)`
-              : `Desconto (${condicaoConfig.prDesconto}%)`}
+            Desconto ({condicaoConfig.prDesconto}%)
           </Text>
           <Text style={styles.totalValue}>{fmtMoney(totalComAjuste - total)}</Text>
         </View>
@@ -1748,6 +1757,27 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       />
     </KeyboardAwareScreen>
   );
+}
+
+// Fator de venda do produto: prefere a coluna `fator_venda` (populada no
+// sync); cai para o `fatorVenda` do raw_json (dados antigos, antes da coluna
+// existir). Sem cadastro ou valor inválido → 1.
+function extractFatorVenda(
+  fatorColuna?: number | null,
+  rawJson?: string | null,
+): number {
+  const direto = Number(fatorColuna ?? 0);
+  if (direto > 0) return direto;
+  if (rawJson) {
+    try {
+      const parsed = JSON.parse(rawJson);
+      const f = Number(parsed?.fatorVenda ?? 0);
+      if (f > 0) return f;
+    } catch {
+      // raw_json inválido → default.
+    }
+  }
+  return 1;
 }
 
 function extractPermiteSaldoNegativo(rawJson?: string | null) {

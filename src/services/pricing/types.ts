@@ -128,6 +128,9 @@ export interface ContextoCalculoItem {
   impostoUf?: ImpostoUfEngine | null;
   prIcmsTabela?: number | null; // de tabela_icms (origem×destino)
   custoVariaveis?: Record<string, number>;
+  // Forma de preço 'V': último unitário praticado do produto para o cliente
+  // (resolvido pelo orquestrador a cada item; null = primeira venda).
+  vlUltimaVendaProduto?: number | null;
   // Dados da CondicaoPagto selecionada no pedido (legado:
   // `cliente_condicao_pagto.getPr_desconto()`). `prDesconto` é subtraído
   // do preço-base após o acréscimo da condição de preço (passo 4 do
