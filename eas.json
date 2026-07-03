@@ -9,9 +9,10 @@
       "distribution": "internal",
       "channel": "development"
     },
-    "preview": {
+    "production-apk": {
       "distribution": "internal",
       "channel": "production",
+      "environment": "production",
       "android": {
         "buildType": "apk"
       }
