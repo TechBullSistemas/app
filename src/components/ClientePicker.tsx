@@ -14,6 +14,8 @@ import {
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
 import { ClienteRow, listClientes } from '@/db/repositories/clientes';
+import { getMapTitulosAtrasoResumo, TituloAtrasoResumo } from '@/db/repositories/notas';
+import { ClienteAtrasoInfo } from '@/components/ClienteAtrasoInfo';
 
 interface Props {
   visible: boolean;
@@ -24,13 +26,20 @@ interface Props {
 export function ClientePicker({ visible, onClose, onSelect }: Props) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ClienteRow[]>([]);
+  const [atrasoMap, setAtrasoMap] = useState<Map<string, TituloAtrasoResumo>>(new Map());
 
   useEffect(() => {
     if (!visible) return;
     let alive = true;
     const t = setTimeout(async () => {
-      const rows = await listClientes(search, 100);
-      if (alive) setItems(rows);
+      const [rows, atraso] = await Promise.all([
+        listClientes(search, 100),
+        getMapTitulosAtrasoResumo(),
+      ]);
+      if (alive) {
+        setItems(rows);
+        setAtrasoMap(atraso);
+      }
     }, 150);
     return () => {
       alive = false;
@@ -72,6 +81,9 @@ export function ClientePicker({ visible, onClose, onSelect }: Props) {
               >
                 <Text style={styles.name}>{item.nome}</Text>
                 <Text style={styles.sub}>{item.cpf_cnpj || '—'}</Text>
+                <ClienteAtrasoInfo
+                  resumo={atrasoMap.get(`${item.cd_cliente}-${item.holding_id}`)}
+                />
               </Pressable>
             )}
           />

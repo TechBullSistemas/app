@@ -61,8 +61,8 @@ interface ItemPedido {
   vlUnitarioOriginal: number; // preço calculado pelo engine (sem edição manual)
   qtDisponivel: number | null;
   permiteSaldoNegativo: boolean;
-  // Fator de venda do produto (produto.fator_venda): quantidade inicial ao
-  // adicionar o item e passo dos botões +/- de quantidade. Default 1.
+  // Fator de venda do produto (produto.fator_venda): passo e múltiplo quando > 0.
+  // Fator 0 = quantidade livre (inicia em 1, decimais sem restrição).
   fatorVenda: number;
   // Texto transitório dos inputs de quantidade e preço durante a digitação.
   // Sem isso, o input controlado por String(qt) engole a vírgula decimal:
@@ -392,16 +392,17 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           } catch {
             raw = null;
           }
+          const fator = extractFatorVenda(prod?.fator_venda, prod?.raw_json);
           const vl = Number(it.vlUnitario) || 0;
           itensCarregados.push({
             cdProduto: Number(it.cdProduto),
             descricao: it.descricao || prod?.descricao || `Produto #${it.cdProduto}`,
-            qt: Number(it.qt) || 0,
+            qt: snapQtToFator(Number(it.qt) || 0, fator),
             vlUnitario: vl,
             vlUnitarioOriginal: prod?.vl_venda ?? vl,
             qtDisponivel: prod?.qt_disponivel ?? null,
             permiteSaldoNegativo: extractPermiteSaldoNegativo(prod?.raw_json),
-            fatorVenda: extractFatorVenda(prod?.fator_venda, prod?.raw_json),
+            fatorVenda: fator,
             rawProduto: raw,
             cdCondicaoPreco:
               it.cdCondicaoPreco != null ? Number(it.cdCondicaoPreco) : null,
@@ -667,11 +668,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     const exist = itens.find((it) => it.cdProduto === p.cd_produto);
     const permite = extractPermiteSaldoNegativo(p.raw_json);
     const disponivel = p.qt_disponivel ?? null;
-    // Quantidade inicial e passo de incremento seguem o fator de venda do
-    // produto (produto.fator_venda; default 1).
+    // Fator > 0: quantidade inicial e passo = fator. Fator 0: inicia em 1,
+    // decimais livres, botões +/- em passos de 1.
     const fator = extractFatorVenda(p.fator_venda, p.raw_json);
+    const passo = passoIncrementoQtd(fator);
     if (exist) {
-      const nova = exist.qt + fator;
+      const nova = exist.qt + passo;
       if (!permite && disponivel != null && nova > disponivel) {
         Alert.alert(
           'Estoque insuficiente',
@@ -685,7 +687,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         ),
       );
     } else {
-      if (!permite && disponivel != null && disponivel < fator) {
+      if (!permite && disponivel != null && disponivel < passo) {
         Alert.alert(
           'Estoque insuficiente',
           `O produto "${p.descricao}" possui apenas ${disponivel} em estoque.`,
@@ -704,7 +706,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         {
           cdProduto: p.cd_produto,
           descricao: p.descricao ?? `Produto ${p.cd_produto}`,
-          qt: fator,
+          qt: passo,
           vlUnitario: vl,
           vlUnitarioOriginal: vl,
           qtDisponivel: disponivel,
@@ -717,7 +719,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       // padrão automaticamente (espelha o legado, que sempre tem uma condição
       // pré-selecionada no spinner ao adicionar item).
       (async () => {
-        const opts = await carregarCondicoesPreco(p.cd_produto, fator, raw);
+        const opts = await carregarCondicoesPreco(p.cd_produto, passo, raw);
         if (!opts.length) return;
         // Preferência: primeira condição não-promocional não-últimaVenda; se
         // não houver, qualquer uma. Mantém o vlValor da condição como mínimo.
@@ -735,11 +737,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     setItens((prev) =>
       prev.map((it) => {
         if (it.cdProduto !== cdProduto) return it;
-        if (novaQtd <= 0) return { ...it, qt: 0, qtInput: textoDigitado };
+        const fator = it.fatorVenda;
+        const qtd =
+          textoDigitado === undefined ? snapQtToFator(novaQtd, fator) : novaQtd;
+        if (qtd <= 0) return { ...it, qt: 0, qtInput: textoDigitado };
         if (
           !it.permiteSaldoNegativo &&
           it.qtDisponivel != null &&
-          novaQtd > it.qtDisponivel
+          qtd > it.qtDisponivel
         ) {
           Alert.alert(
             'Estoque insuficiente',
@@ -747,18 +752,38 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           );
           return { ...it, qtInput: undefined };
         }
-        return { ...it, qt: novaQtd, qtInput: textoDigitado };
+        return { ...it, qt: qtd, qtInput: textoDigitado };
       }),
     );
   }
 
-  // Blur do input de quantidade: descarta o texto transitório para o display
-  // voltar ao valor numérico normalizado.
+  // Blur: normaliza ao fator de venda quando > 0 (ex.: 13 → 10; 2,23 → 2,2).
   function finalizarQtdBlur(cdProduto: number) {
     setItens((prev) =>
-      prev.map((it) =>
-        it.cdProduto === cdProduto ? { ...it, qtInput: undefined } : it,
-      ),
+      prev.map((it) => {
+        if (it.cdProduto !== cdProduto) return it;
+        const fator = it.fatorVenda;
+        let snapped = snapQtToFator(it.qt, fator);
+        if (
+          !it.permiteSaldoNegativo &&
+          it.qtDisponivel != null &&
+          snapped > it.qtDisponivel
+        ) {
+          if (fator > 0) {
+            const maxSteps = Math.floor(it.qtDisponivel / fator + 1e-9);
+            snapped = roundQt(maxSteps * fator, fator);
+          } else {
+            snapped = roundQtLivre(it.qtDisponivel);
+          }
+          if (snapped > 0) {
+            Alert.alert(
+              'Estoque insuficiente',
+              `Quantidade ajustada ao estoque disponível (${snapped}).`,
+            );
+          }
+        }
+        return { ...it, qt: snapped, qtInput: undefined };
+      }),
     );
   }
 
@@ -1029,7 +1054,20 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (!user) return;
     if (!cliente) return Alert.alert('Atenção', 'Selecione o cliente.');
     if (!itens.length) return Alert.alert('Atenção', 'Adicione pelo menos um item.');
-    if (itens.some((it) => it.qt <= 0)) {
+
+    const itensNorm = itens.map((it) => ({
+      ...it,
+      qt: snapQtToFator(it.qt, it.fatorVenda),
+      qtInput: undefined,
+    }));
+    if (itensNorm.some((n, i) => n.qt !== itens[i].qt)) {
+      setItens(itensNorm);
+      return Alert.alert(
+        'Quantidade ajustada',
+        'Algumas quantidades foram ajustadas ao fator de venda do produto. Verifique e salve novamente.',
+      );
+    }
+    if (itensNorm.some((it) => it.qt <= 0)) {
       return Alert.alert('Atenção', 'Existe(m) item(ns) com quantidade zero.');
     }
     if (!condicaoSel)
@@ -1119,7 +1157,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       const cId = clientId || uuidv4();
       const dtEmissao = new Date().toISOString();
 
-      const prevendaItem = itens.map((it) => ({
+      const prevendaItem = itensNorm.map((it) => ({
         cdProduto: it.cdProduto,
         qtProduto: it.qt,
         vlCusto: 0,
@@ -1219,7 +1257,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       const displayPayload = {
         condicaoLabel: condicaoSel.descricao,
         observacao: obs.trim() || null,
-        itens: itens.map((it) => ({
+        itens: itensNorm.map((it) => ({
           cdProduto: it.cdProduto,
           descricao: it.descricao,
           qt: it.qt,
@@ -1379,24 +1417,26 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                 </Text>
               )}
               <View style={styles.itemRow}>
-                <View style={{ flex: 1.4 }}>
+                <View style={{ flex: 1.7 }}>
                   <Text style={styles.itemLbl}>Qtd</Text>
                   <View style={styles.qtdBox}>
                     <Pressable
                       style={styles.qtdBtn}
-                      onPress={() =>
-                        alterarQtd(
-                          it.cdProduto,
-                          Math.max(0, it.qt - (it.fatorVenda || 1)),
-                        )
-                      }
+                      onPress={() => {
+                        const passo = passoIncrementoQtd(it.fatorVenda);
+                        const base =
+                          it.fatorVenda > 0
+                            ? snapQtToFator(it.qt, it.fatorVenda)
+                            : it.qt;
+                        alterarQtd(it.cdProduto, Math.max(0, base - passo));
+                      }}
                     >
                       <Ionicons name="remove" size={18} color="#fff" />
                     </Pressable>
                     <TextInput
                       style={styles.qtdInput}
                       keyboardType="decimal-pad"
-                      value={it.qtInput ?? String(it.qt)}
+                      value={it.qtInput ?? formatQtDisplay(it.qt, it.fatorVenda)}
                       onChangeText={(t) =>
                         alterarQtd(
                           it.cdProduto,
@@ -1410,9 +1450,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     />
                     <Pressable
                       style={styles.qtdBtn}
-                      onPress={() =>
-                        alterarQtd(it.cdProduto, it.qt + (it.fatorVenda || 1))
-                      }
+                      onPress={() => {
+                        const passo = passoIncrementoQtd(it.fatorVenda);
+                        const base =
+                          it.fatorVenda > 0
+                            ? snapQtToFator(it.qt, it.fatorVenda)
+                            : it.qt;
+                        alterarQtd(it.cdProduto, base + passo);
+                      }}
                     >
                       <Ionicons name="add" size={18} color="#fff" />
                     </Pressable>
@@ -1795,24 +1840,64 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 }
 
 // Fator de venda do produto: prefere a coluna `fator_venda` (populada no
-// sync); cai para o `fatorVenda` do raw_json (dados antigos, antes da coluna
-// existir). Sem cadastro ou valor inválido → 1.
+// sync); cai para o `fatorVenda` do raw_json. Valor 0 = sem restrição de
+// múltiplo (quantidade livre, inicia em 1). Ausente no cadastro → 0.
 function extractFatorVenda(
   fatorColuna?: number | null,
   rawJson?: string | null,
 ): number {
-  const direto = Number(fatorColuna ?? 0);
-  if (direto > 0) return direto;
+  if (fatorColuna != null && Number.isFinite(Number(fatorColuna))) {
+    const f = Number(fatorColuna);
+    if (f >= 0) return f;
+  }
   if (rawJson) {
     try {
       const parsed = JSON.parse(rawJson);
-      const f = Number(parsed?.fatorVenda ?? 0);
-      if (f > 0) return f;
+      if (parsed?.fatorVenda != null && Number.isFinite(Number(parsed.fatorVenda))) {
+        const f = Number(parsed.fatorVenda);
+        if (f >= 0) return f;
+      }
     } catch {
-      // raw_json inválido → default.
+      // raw_json inválido → sem fator.
     }
   }
-  return 1;
+  return 0;
+}
+
+/** Passo dos botões +/- e quantidade inicial quando fator = 0. */
+function passoIncrementoQtd(fator: number): number {
+  return fator > 0 ? fator : 1;
+}
+
+function fatorDecimals(fator: number): number {
+  if (Number.isInteger(fator)) return 0;
+  const s = String(fator);
+  const dot = s.indexOf('.');
+  if (dot === -1) return 0;
+  return s.length - dot - 1;
+}
+
+function roundQt(qt: number, fator: number): number {
+  const dec = Math.max(fatorDecimals(fator), 0);
+  return Number(qt.toFixed(dec));
+}
+
+/** Evita ruído de ponto flutuante sem impor múltiplo de fator. */
+function roundQtLivre(qt: number): number {
+  return Number(qt.toFixed(6));
+}
+
+/** Ajusta ao múltiplo do fator quando > 0; fator 0 mantém decimais livres. */
+function snapQtToFator(qt: number, fator: number): number {
+  if (qt <= 0) return 0;
+  if (!(fator > 0)) return roundQtLivre(qt);
+  const mult = Math.round(qt / fator);
+  return roundQt(mult * fator, fator);
+}
+
+function formatQtDisplay(qt: number, fator: number): string {
+  const v = fator > 0 ? roundQt(qt, fator) : roundQtLivre(qt);
+  return String(v).replace('.', ',');
 }
 
 function extractPermiteSaldoNegativo(rawJson?: string | null) {
@@ -1919,7 +2004,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
     backgroundColor: '#f8fafc',
-    minWidth: 50,
+    minWidth: 68,
     textAlign: 'center',
     flex: 1,
   },

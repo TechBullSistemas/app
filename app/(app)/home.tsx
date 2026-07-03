@@ -90,6 +90,7 @@ export default function HomeScreen() {
     { label: 'Visitas', icon: 'walk', href: '/(app)/visitas', color: '#10b981' },
     { label: 'Produtos', icon: 'cube', href: '/(app)/produtos', color: '#f59e0b' },
     { label: 'Pedidos', icon: 'receipt', href: '/(app)/pedidos', color: '#8b5cf6' },
+    { label: 'Notas', icon: 'document-text', href: '/(app)/vendas', color: '#6366f1' },
     { label: 'Meta', icon: 'speedometer', href: '/(app)/meta', color: '#ec4899' },
     { label: 'Buscar Info.', icon: 'cloud-download', href: '/(app)/sync/buscar', color: '#14b8a6' },
     {

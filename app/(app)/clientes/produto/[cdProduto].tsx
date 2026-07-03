@@ -17,10 +17,7 @@ import {
 import { getProdutoById, ProdutoRow } from '@/db/repositories/produtos';
 import { getClienteById, ClienteRow } from '@/db/repositories/clientes';
 
-function fmtMoney(v: number | null | undefined) {
-  if (v == null) return '—';
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { fmtMoney, fmtQty } from '@/utils/format';
 
 function fmtDate(v: string | null | undefined) {
   if (!v) return '—';
@@ -98,7 +95,7 @@ export default function ClienteProdutoVendas() {
         </View>
         <View style={styles.resumoBox}>
           <Text style={styles.resumoLabel}>Qtd. total</Text>
-          <Text style={styles.resumoValor}>{totalQt}</Text>
+          <Text style={styles.resumoValor}>{fmtQty(totalQt)}</Text>
         </View>
         <View style={styles.resumoBox}>
           <Text style={styles.resumoLabel}>Valor total</Text>

@@ -8,9 +8,12 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
-import { getNotaById, NotaFiscalRow } from '@/db/repositories/notas';
+import { getNotaById, NotaFiscalRow, parseNotaRaw } from '@/db/repositories/notas';
 import { getProdutoDescricoes } from '@/db/repositories/produtos';
+import { findCondicaoPagto } from '@/db/repositories/condicaoPagto';
+import { getClienteById } from '@/db/repositories/clientes';
 import { getDb } from '@/db/database';
+import { fmtDate, fmtMoney } from '@/utils/format';
 
 interface ItemNota {
   cdProduto: number;
@@ -32,20 +35,6 @@ interface NotaParsed {
   obs: string | null;
   idSituacao: string | null;
   itens: ItemNota[];
-}
-
-function fmtMoney(v: number | null | undefined) {
-  if (v == null) return '—';
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function fmtDate(v: string | null | undefined) {
-  if (!v) return '—';
-  try {
-    return new Date(v).toLocaleDateString('pt-BR');
-  } catch {
-    return v;
-  }
 }
 
 function num(v: any): number {
@@ -96,6 +85,9 @@ export default function VendaDetalhe() {
   const [parsed, setParsed] = useState<NotaParsed | null>(null);
   const [naturezaLabel, setNaturezaLabel] = useState<string | null>(null);
   const [tipoVendaLabel, setTipoVendaLabel] = useState<string | null>(null);
+  const [clienteNome, setClienteNome] = useState<string | null>(null);
+  const [serie, setSerie] = useState<string | null>(null);
+  const [condicaoPagto, setCondicaoPagto] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -122,6 +114,23 @@ export default function VendaDetalhe() {
 
       setNota(n);
       setParsed(p);
+
+      const rawMeta = parseNotaRaw(n.raw_json);
+      setSerie(rawMeta.serie);
+
+      if (n.cd_cliente != null) {
+        const cli = await getClienteById(n.cd_cliente, holdingId);
+        setClienteNome(cli?.nome ?? null);
+      } else {
+        setClienteNome(null);
+      }
+
+      if (rawMeta.cdCondicaoPagto != null) {
+        const cp = await findCondicaoPagto(rawMeta.cdCondicaoPagto, holdingId);
+        setCondicaoPagto(cp?.descricao ?? null);
+      } else {
+        setCondicaoPagto(null);
+      }
 
       const db = await getDb();
       if (p.cdNatureza != null) {
@@ -150,13 +159,18 @@ export default function VendaDetalhe() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
       <View style={styles.card}>
-        <Text style={styles.title}>NF nº {nota.cd_nota}</Text>
+        <Text style={styles.title}>
+          NF nº {nota.cd_nota}
+          {serie ? ` / Série ${serie}` : ''}
+        </Text>
+        {clienteNome ? <Text style={styles.subtle}>Cliente: {clienteNome}</Text> : null}
         <Text style={styles.subtle}>Emissão: {fmtDate(nota.dt_emissao)}</Text>
         <Text style={styles.totalValor}>{fmtMoney(nota.vl_total)}</Text>
       </View>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Pagamento / Operação</Text>
+        <Linha label="Condição de pagamento" value={condicaoPagto ?? '—'} />
         <Linha label="Tipo de venda" value={tipoVendaLabel ?? '—'} />
         <Linha label="Natureza de operação" value={naturezaLabel ?? '—'} />
         <Linha label="Situação" value={parsed.idSituacao ?? '—'} />

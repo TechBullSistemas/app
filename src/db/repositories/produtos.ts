@@ -206,3 +206,73 @@ export async function listProdutosComFotoPendente(limit = 200): Promise<ProdutoR
     [limit],
   );
 }
+
+export function fmtCodigoDescricao(cd: number, descricao: string | null | undefined): string {
+  const d = descricao?.trim();
+  return d ? `${d} (${cd})` : String(cd);
+}
+
+export interface ProdutoAuxiliarLabels {
+  unidade: string | null;
+  marca: string | null;
+  grupo: string | null;
+  fornecedor: string | null;
+  cor: string | null;
+  tamanho: string | null;
+}
+
+async function lookupDescricao(
+  table: string,
+  cdColumn: string,
+  descColumn: string,
+  cd: number | null | undefined,
+  holdingId: number,
+): Promise<string | null> {
+  if (cd == null) return null;
+  const db = await getDb();
+  const row = await db.getFirstAsync<Record<string, string | null>>(
+    `SELECT ${descColumn} AS lbl FROM ${table} WHERE ${cdColumn} = ? AND holding_id = ?`,
+    [cd, holdingId],
+  );
+  return row?.lbl?.trim() || null;
+}
+
+function rawAuxiliarFallback(item: ProdutoRow): Partial<ProdutoAuxiliarLabels> {
+  try {
+    const raw = item.raw_json ? JSON.parse(item.raw_json) : {};
+    const str = (v: unknown) => (v != null ? String(v).trim() || null : null);
+    return {
+      unidade: str(raw.dsUnidade ?? raw.nmUnidade),
+      marca: str(raw.dsMarca),
+      grupo: str(raw.dsGrupo),
+      fornecedor: str(raw.nmFornecedor ?? raw.razaoSocialFornecedor),
+      cor: str(raw.dsCor),
+      tamanho: str(raw.dsTamanho),
+    };
+  } catch {
+    return {};
+  }
+}
+
+export async function getProdutoAuxiliarLabels(
+  item: ProdutoRow,
+): Promise<ProdutoAuxiliarLabels> {
+  const h = item.holding_id;
+  const fallback = rawAuxiliarFallback(item);
+  const [unidade, marca, grupo, fornecedor, cor, tamanho] = await Promise.all([
+    lookupDescricao('unidade', 'cd_unidade', 'descricao', item.cd_unidade, h),
+    lookupDescricao('marca', 'cd_marca', 'descricao', item.cd_marca, h),
+    lookupDescricao('grupo_produto', 'cd_grupo', 'descricao', item.cd_grupo, h),
+    lookupDescricao('fornecedor', 'cd_fornecedor', 'nome', item.cd_fornecedor, h),
+    lookupDescricao('cor', 'cd_cor', 'descricao', item.cd_cor, h),
+    lookupDescricao('tamanho', 'cd_tamanho', 'descricao', item.cd_tamanho, h),
+  ]);
+  return {
+    unidade: unidade ?? fallback.unidade ?? null,
+    marca: marca ?? fallback.marca ?? null,
+    grupo: grupo ?? fallback.grupo ?? null,
+    fornecedor: fornecedor ?? fallback.fornecedor ?? null,
+    cor: cor ?? fallback.cor ?? null,
+    tamanho: tamanho ?? fallback.tamanho ?? null,
+  };
+}

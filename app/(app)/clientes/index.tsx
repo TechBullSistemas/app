@@ -12,6 +12,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback } from 'react';
 import { listClientes, ClienteRow } from '@/db/repositories/clientes';
+import { getMapTitulosAtrasoResumo, TituloAtrasoResumo } from '@/db/repositories/notas';
+import { ClienteAtrasoInfo } from '@/components/ClienteAtrasoInfo';
 
 function tpPessoaLabel(tp: string | null | undefined) {
   if (tp === 'F') return 'Física';
@@ -38,15 +40,20 @@ export default function ClientesScreen() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ClienteRow[]>([]);
+  const [atrasoMap, setAtrasoMap] = useState<Map<string, TituloAtrasoResumo>>(new Map());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     const t = setTimeout(async () => {
-      const rows = await listClientes(search, 200);
+      const [rows, atraso] = await Promise.all([
+        listClientes(search, 200),
+        getMapTitulosAtrasoResumo(),
+      ]);
       if (alive) {
         setItems(rows);
+        setAtrasoMap(atraso);
         setLoading(false);
       }
     }, 200);
@@ -60,9 +67,14 @@ export default function ClientesScreen() {
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      listClientes(search, 200).then((rows) => {
-        if (alive) setItems(rows);
-      });
+      Promise.all([listClientes(search, 200), getMapTitulosAtrasoResumo()]).then(
+        ([rows, atraso]) => {
+          if (alive) {
+            setItems(rows);
+            setAtrasoMap(atraso);
+          }
+        },
+      );
       return () => {
         alive = false;
       };
@@ -135,6 +147,9 @@ export default function ClientesScreen() {
                 {enderecoLine ? <Text style={styles.sub}>{enderecoLine}</Text> : null}
                 {cidadeLine ? <Text style={styles.sub}>{cidadeLine}</Text> : null}
                 {item.celular ? <Text style={styles.sub}>📱 {item.celular}</Text> : null}
+                <ClienteAtrasoInfo
+                  resumo={atrasoMap.get(`${item.cd_cliente}-${item.holding_id}`)}
+                />
               </Pressable>
             );
           }}

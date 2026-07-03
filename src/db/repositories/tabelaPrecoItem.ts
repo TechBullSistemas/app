@@ -95,3 +95,23 @@ export async function findTabelaPrecoItem(
   );
   return row ?? null;
 }
+
+export interface TabelaPrecoItemComDescricao extends TabelaPrecoItemRow {
+  tabela_descricao: string | null;
+}
+
+export async function listTabelaPrecoItensByProduto(
+  cdProduto: number,
+  holdingId: number,
+): Promise<TabelaPrecoItemComDescricao[]> {
+  const db = await getDb();
+  return db.getAllAsync<TabelaPrecoItemComDescricao>(
+    `SELECT tpi.*, tp.descricao AS tabela_descricao
+     FROM tabela_preco_item tpi
+     JOIN tabela_preco tp
+       ON tp.cd_tabela = tpi.cd_tabela_preco AND tp.holding_id = tpi.holding_id
+     WHERE tpi.cd_produto = ? AND tpi.holding_id = ?
+     ORDER BY tp.descricao`,
+    [cdProduto, holdingId],
+  );
+}

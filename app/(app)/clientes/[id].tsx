@@ -12,6 +12,27 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ClienteRow, getClienteById, isClienteEditavel } from '@/db/repositories/clientes';
+import { ClienteAtrasoInfo } from '@/components/ClienteAtrasoInfo';
+import {
+  calcTituloAtrasoResumo,
+  diasVencidos,
+  listNotasByCliente,
+  listProdutosCompradosCliente,
+  listTitulosByCliente,
+  NotaFiscalRow,
+  parseTituloRaw,
+  ProdutoCompradoCliente,
+  sortTitulosByVencimento,
+  tituloEmAberto,
+  TituloRow,
+} from '@/db/repositories/notas';
+import {
+  listOutboxVendasByCliente,
+  OutboxVendaRow,
+} from '@/db/repositories/outbox';
+import { listVisitasCliente, VisitaRow } from '@/db/repositories/visitas';
+import { getProdutoById } from '@/db/repositories/produtos';
+import { fmtDate, fmtMoney, fmtQty } from '@/utils/format';
 
 function fmtCpfCnpj(raw: string | null | undefined) {
   if (!raw) return '';
@@ -27,22 +48,8 @@ function fmtCpfCnpj(raw: string | null | undefined) {
   }
   return raw;
 }
-import {
-  listNotasByCliente,
-  listProdutosCompradosCliente,
-  listTitulosByCliente,
-  NotaFiscalRow,
-  ProdutoCompradoCliente,
-  TituloRow,
-} from '@/db/repositories/notas';
-import {
-  listOutboxVendasByCliente,
-  OutboxVendaRow,
-} from '@/db/repositories/outbox';
-import { listVisitasCliente, VisitaRow } from '@/db/repositories/visitas';
-import { getProdutoById } from '@/db/repositories/produtos';
 
-type AbaId = 'dados' | 'vendas' | 'produtos' | 'pendentes';
+type AbaId = 'dados' | 'vendas' | 'produtos' | 'titulos' | 'pendentes';
 
 interface AbaDef {
   id: AbaId;
@@ -54,22 +61,11 @@ const ABAS: AbaDef[] = [
   { id: 'dados', label: 'Dados', icon: 'person-outline' },
   { id: 'vendas', label: 'Vendas', icon: 'receipt-outline' },
   { id: 'produtos', label: 'Produtos', icon: 'cube-outline' },
+  { id: 'titulos', label: 'Títulos', icon: 'wallet-outline' },
   { id: 'pendentes', label: 'Pendentes', icon: 'time-outline' },
 ];
 
-function fmtMoney(v: number | null | undefined) {
-  if (v == null) return '—';
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function fmtDate(v: string | null | undefined) {
-  if (!v) return '—';
-  try {
-    return new Date(v).toLocaleDateString('pt-BR');
-  } catch {
-    return v;
-  }
-}
+type FiltroTitulos = 'abertos' | 'todos';
 
 export default function ClienteDetalhe() {
   const router = useRouter();
@@ -78,6 +74,7 @@ export default function ClienteDetalhe() {
   const holdingId = Number(params.h);
 
   const [aba, setAba] = useState<AbaId>('dados');
+  const [filtroTitulos, setFiltroTitulos] = useState<FiltroTitulos>('abertos');
   const [cli, setCli] = useState<ClienteRow | null>(null);
   const [notas, setNotas] = useState<NotaFiscalRow[]>([]);
   const [titulos, setTitulos] = useState<TituloRow[]>([]);
@@ -129,7 +126,10 @@ export default function ClienteDetalhe() {
     return <ActivityIndicator style={{ marginTop: 24 }} />;
   }
 
-  const tituloAberto = titulos.filter((t) => !t.vl_pago || t.vl_pago < (t.vl_titulo ?? 0));
+  const atrasoResumo = calcTituloAtrasoResumo(titulos);
+  const titulosExibidos = sortTitulosByVencimento(
+    filtroTitulos === 'abertos' ? titulos.filter(tituloEmAberto) : titulos,
+  );
   const enderecoLine = [cli.endereco, cli.numero, cli.bairro].filter(Boolean).join(', ');
   const cidadeLine = cli.cidade_nome
     ? `${cli.cidade_nome}${cli.estado ? `/${cli.estado}` : ''}`
@@ -161,6 +161,7 @@ export default function ClienteDetalhe() {
             <Ionicons name="cart" size={18} color="#fff" />
             <Text style={styles.tirarBtnText}>Tirar Pedido</Text>
           </Pressable>
+          <ClienteAtrasoInfo resumo={atrasoResumo} variant="inline" />
           {isClienteEditavel(cli) ? (
             <Pressable
               style={styles.editBtn}
@@ -178,7 +179,12 @@ export default function ClienteDetalhe() {
         </View>
       </View>
 
-      <View style={styles.tabsRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScroll}
+        contentContainerStyle={styles.tabsRow}
+      >
         {ABAS.map((a) => {
           const ativo = aba === a.id;
           return (
@@ -198,7 +204,7 @@ export default function ClienteDetalhe() {
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, gap: 12 }}>
         {aba === 'dados' && (
@@ -212,20 +218,6 @@ export default function ClienteDetalhe() {
               <Linha label="Logradouro" value={enderecoLine || '—'} />
               <Linha label="Cidade" value={cidadeLine || '—'} />
               <Linha label="CEP" value={cli.cep || '—'} />
-            </Section>
-            <Section title="Financeiro (em aberto)">
-              {tituloAberto.length === 0 ? (
-                <Text style={styles.subtle}>Sem títulos em aberto.</Text>
-              ) : (
-                tituloAberto.map((t) => (
-                  <View key={`${t.cd_titulo}-${t.cd_empresa}`} style={styles.linhaItem}>
-                    <Text style={styles.linhaItemMain}>Título {t.cd_titulo}</Text>
-                    <Text style={styles.linhaItemSub}>
-                      Venc.: {fmtDate(t.dt_vencimento)} • {fmtMoney(t.vl_titulo)}
-                    </Text>
-                  </View>
-                ))
-              )}
             </Section>
             <Section title={`Visitas (${visitas.length})`}>
               {visitas.length === 0 ? (
@@ -311,13 +303,113 @@ export default function ClienteDetalhe() {
                         {p.descricao ?? `Produto ${p.cd_produto}`}
                       </Text>
                       <Text style={styles.linhaItemSub}>
-                        #{p.cd_produto} • Qtd. {p.qt_total} • {p.vendas_count} venda
+                        #{p.cd_produto} • Qtd. {fmtQty(p.qt_total)} • {p.vendas_count} venda
                         {p.vendas_count !== 1 ? 's' : ''}
                       </Text>
                     </View>
                     <Text style={styles.cardTotal}>{fmtMoney(p.vl_total)}</Text>
                     <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                   </Pressable>
+                );
+              })
+            )}
+          </Section>
+        )}
+
+        {aba === 'titulos' && (
+          <Section title={`Títulos (${titulosExibidos.length})`}>
+            <View style={styles.filtroRow}>
+              <Pressable
+                style={[styles.filtroChip, filtroTitulos === 'abertos' && styles.filtroChipAtivo]}
+                onPress={() => setFiltroTitulos('abertos')}
+              >
+                <Text
+                  style={[
+                    styles.filtroChipText,
+                    filtroTitulos === 'abertos' && styles.filtroChipTextAtivo,
+                  ]}
+                >
+                  Em aberto
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.filtroChip, filtroTitulos === 'todos' && styles.filtroChipAtivo]}
+                onPress={() => setFiltroTitulos('todos')}
+              >
+                <Text
+                  style={[
+                    styles.filtroChipText,
+                    filtroTitulos === 'todos' && styles.filtroChipTextAtivo,
+                  ]}
+                >
+                  Todos
+                </Text>
+              </Pressable>
+            </View>
+            {titulosExibidos.length === 0 ? (
+              <Text style={styles.subtle}>Nenhum título encontrado.</Text>
+            ) : (
+              titulosExibidos.map((t) => {
+                const parsed = parseTituloRaw(t);
+                const aberto = tituloEmAberto(t);
+                const diasAtraso = aberto ? diasVencidos(t.dt_vencimento) : null;
+                const saldo = (t.vl_titulo ?? 0) - (t.vl_pago ?? 0);
+                const serieLabel = parsed.serie ? `Série ${parsed.serie}` : null;
+
+                return (
+                  <View
+                    key={`${t.cd_titulo}-${t.cd_empresa}`}
+                    style={styles.cardLinha}
+                  >
+                    {diasAtraso != null ? (
+                      <View style={styles.atrasoBadge}>
+                        <Text style={styles.atrasoBadgeText}>{diasAtraso}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.atrasoBadgePlaceholder} />
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.tituloNumRow}>
+                        <Text style={styles.linhaItemSub}>Título </Text>
+                        {parsed.cdNota != null ? (
+                          <Pressable
+                            onPress={() =>
+                              router.push({
+                                pathname: '/(app)/vendas/[id]',
+                                params: {
+                                  id: String(parsed.cdNota),
+                                  e: String(t.cd_empresa),
+                                  h: String(t.holding_id),
+                                },
+                              })
+                            }
+                          >
+                            <Text style={styles.tituloLink}>{t.cd_titulo}</Text>
+                          </Pressable>
+                        ) : (
+                          <Text style={styles.linhaItemMain}>{t.cd_titulo}</Text>
+                        )}
+                        <Text style={styles.linhaItemSub}>
+                          {' '}
+                          • {aberto ? 'Em aberto' : 'Quitado'}
+                        </Text>
+                      </View>
+                      <Text style={styles.linhaItemSub}>
+                        {[serieLabel, `Venc. ${fmtDate(t.dt_vencimento)}`, `Emissão ${fmtDate(t.dt_emissao)}`]
+                          .filter(Boolean)
+                          .join(' • ')}
+                      </Text>
+                      {aberto && t.vl_pago != null && t.vl_pago > 0 ? (
+                        <Text style={styles.linhaItemSub}>
+                          Saldo: {fmtMoney(saldo)} de {fmtMoney(t.vl_titulo)}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.cardTotal}>{fmtMoney(t.vl_titulo)}</Text>
+                    {parsed.cdNota != null ? (
+                      <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                    ) : null}
+                  </View>
                 );
               })
             )}
@@ -398,7 +490,7 @@ const styles = StyleSheet.create({
   titulo: { fontSize: 18, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
   subtle: { color: '#64748b', fontSize: 12 },
   headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  headerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' },
   chipPendente: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -431,19 +523,23 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   editBtnText: { color: '#1e3a8a', fontWeight: '700' },
-  tabsRow: {
-    flexDirection: 'row',
+  tabsScroll: {
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderColor: '#e2e8f0',
+    flexGrow: 0,
+  },
+  tabsRow: {
+    flexDirection: 'row',
   },
   tab: {
-    flex: 1,
     flexDirection: 'row',
     gap: 4,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 14,
+    minWidth: 88,
   },
   tabAtiva: { backgroundColor: '#1e3a8a' },
   tabText: { color: '#475569', fontSize: 12, fontWeight: '600' },
@@ -467,4 +563,26 @@ const styles = StyleSheet.create({
   cardTotal: { color: '#16a34a', fontWeight: '700' },
   thumb: { width: 48, height: 48, borderRadius: 8, backgroundColor: '#f1f5f9' },
   thumbEmpty: { backgroundColor: '#e2e8f0' },
+  filtroRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  filtroChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#f1f5f9',
+  },
+  filtroChipAtivo: { backgroundColor: '#1e3a8a' },
+  filtroChipText: { color: '#475569', fontSize: 12, fontWeight: '600' },
+  filtroChipTextAtivo: { color: '#fff' },
+  atrasoBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  atrasoBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  atrasoBadgePlaceholder: { width: 28 },
+  tituloNumRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  tituloLink: { color: '#1e3a8a', fontWeight: '700', fontSize: 14 },
 });

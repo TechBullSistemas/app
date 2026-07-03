@@ -27,7 +27,7 @@ export default function AppLayout() {
       <Stack.Screen name="produtos/[id]" options={{ title: 'Produto' }} />
       <Stack.Screen name="visitas/index" options={{ title: 'Visitas' }} />
       <Stack.Screen name="visitas/nova" options={{ title: 'Nova Visita' }} />
-      <Stack.Screen name="vendas/index" options={{ title: 'Vendas (Notas Fiscais)' }} />
+      <Stack.Screen name="vendas/index" options={{ title: 'Notas' }} />
       <Stack.Screen name="vendas/[id]" options={{ title: 'Detalhe da Venda' }} />
       <Stack.Screen name="clientes/produto/[cdProduto]" options={{ title: 'Produto do Cliente' }} />
       <Stack.Screen name="pedidos/index" options={{ title: 'Consulta de Pedidos' }} />
