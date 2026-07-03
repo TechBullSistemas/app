@@ -64,6 +64,12 @@ interface ItemPedido {
   // Fator de venda do produto (produto.fator_venda): quantidade inicial ao
   // adicionar o item e passo dos botões +/- de quantidade. Default 1.
   fatorVenda: number;
+  // Texto transitório dos inputs de quantidade e preço durante a digitação.
+  // Sem isso, o input controlado por String(qt) engole a vírgula decimal:
+  // "2," parseia para 2, o estado re-renderiza e a vírgula some antes da
+  // casa decimal ser digitada. Limpo no blur (display volta ao normalizado).
+  qtInput?: string;
+  vlInput?: string;
   // Condição de preço selecionada por item (legado: spn_tabela_condicao_preco).
   // Quando definida, alimenta o pipeline (acréscimo / última venda) e estabelece
   // o preço mínimo para a regra `idPermiteAlterarValorProdutoPalm = "A"`.
@@ -541,6 +547,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
               pricing: novo.pricing,
               vlUnitario: novoUnit,
               vlUnitarioOriginal: novoUnit,
+              vlInput: undefined,
             };
           }
           return { ...it, pricing: novo.pricing };
@@ -721,11 +728,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     }
   }
 
-  function alterarQtd(cdProduto: number, novaQtd: number) {
+  // `textoDigitado` preserva o que o vendedor está digitando (ex.: "2,")
+  // enquanto o parse ainda não tem a casa decimal. Chamadas dos botões +/-
+  // não passam texto, o que limpa o transitório e volta ao valor normalizado.
+  function alterarQtd(cdProduto: number, novaQtd: number, textoDigitado?: string) {
     setItens((prev) =>
       prev.map((it) => {
         if (it.cdProduto !== cdProduto) return it;
-        if (novaQtd <= 0) return { ...it, qt: 0 };
+        if (novaQtd <= 0) return { ...it, qt: 0, qtInput: textoDigitado };
         if (
           !it.permiteSaldoNegativo &&
           it.qtDisponivel != null &&
@@ -735,10 +745,20 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             'Estoque insuficiente',
             `O produto "${it.descricao}" possui apenas ${it.qtDisponivel} em estoque.`,
           );
-          return it;
+          return { ...it, qtInput: undefined };
         }
-        return { ...it, qt: novaQtd };
+        return { ...it, qt: novaQtd, qtInput: textoDigitado };
       }),
+    );
+  }
+
+  // Blur do input de quantidade: descarta o texto transitório para o display
+  // voltar ao valor numérico normalizado.
+  function finalizarQtdBlur(cdProduto: number) {
+    setItens((prev) =>
+      prev.map((it) =>
+        it.cdProduto === cdProduto ? { ...it, qtInput: undefined } : it,
+      ),
     );
   }
 
@@ -749,12 +769,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
    * o mínimo e a trava pisaria no mín). A validação do modo "A" do legado
    * é feita em `validarPrecoBlur` quando o input perde foco.
    */
-  function alterarPreco(cdProduto: number, vl: number) {
+  function alterarPreco(cdProduto: number, vl: number, textoDigitado?: string) {
     const modo = empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
     if (modo === 'N') return; // readonly: ignora alterações
     setItens((prev) =>
       prev.map((it) =>
-        it.cdProduto === cdProduto ? { ...it, vlUnitario: vl } : it,
+        it.cdProduto === cdProduto
+          ? { ...it, vlUnitario: vl, vlInput: textoDigitado }
+          : it,
       ),
     );
   }
@@ -767,18 +789,20 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
    */
   function validarPrecoBlur(cdProduto: number) {
     const modo = empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
-    if (modo !== 'A') return;
     setItens((prev) =>
       prev.map((it) => {
         if (it.cdProduto !== cdProduto) return it;
-        if (it.vlMinimo == null || it.vlUnitario >= it.vlMinimo) return it;
+        // Sempre limpa o texto transitório no blur (display normalizado).
+        if (modo !== 'A' || it.vlMinimo == null || it.vlUnitario >= it.vlMinimo) {
+          return it.vlInput === undefined ? it : { ...it, vlInput: undefined };
+        }
         Alert.alert(
           'Valor abaixo do mínimo',
           `Permitido somente alterar para valores superiores a ${fmtMoney(
             it.vlMinimo,
           )}.`,
         );
-        return { ...it, vlUnitario: it.vlMinimo };
+        return { ...it, vlUnitario: it.vlMinimo, vlInput: undefined };
       }),
     );
   }
@@ -904,6 +928,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           vlMinimo: opt.vlValor,
           vlUnitario: opt.vlValor,
           vlUnitarioOriginal: opt.vlValor,
+          vlInput: undefined,
         };
       }),
     );
@@ -1370,11 +1395,17 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     </Pressable>
                     <TextInput
                       style={styles.qtdInput}
-                      keyboardType="numeric"
-                      value={String(it.qt)}
+                      keyboardType="decimal-pad"
+                      value={it.qtInput ?? String(it.qt)}
                       onChangeText={(t) =>
-                        alterarQtd(it.cdProduto, Number(t.replace(',', '.')) || 0)
+                        alterarQtd(
+                          it.cdProduto,
+                          Number(t.replace(',', '.')) || 0,
+                          t,
+                        )
                       }
+                      onEndEditing={() => finalizarQtdBlur(it.cdProduto)}
+                      onBlur={() => finalizarQtdBlur(it.cdProduto)}
                       selectTextOnFocus
                     />
                     <Pressable
@@ -1401,9 +1432,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     ]}
                     keyboardType="decimal-pad"
                     editable={!precoBloqueado && !precoReadonly}
-                    value={String(it.vlUnitario)}
+                    value={it.vlInput ?? String(it.vlUnitario)}
                     onChangeText={(t) =>
-                      alterarPreco(it.cdProduto, Number(t.replace(',', '.')) || 0)
+                      alterarPreco(
+                        it.cdProduto,
+                        Number(t.replace(',', '.')) || 0,
+                        t,
+                      )
                     }
                     onEndEditing={() => validarPrecoBlur(it.cdProduto)}
                     onBlur={() => validarPrecoBlur(it.cdProduto)}
