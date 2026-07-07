@@ -3,10 +3,12 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 're
 import { useLocalSearchParams } from 'expo-router';
 
 import { getProdutoById, getProdutoAuxiliarLabels, fmtCodigoDescricao, ProdutoRow } from '@/db/repositories/produtos';
+import { getCdTabelasPermitidas } from '@/db/repositories/usuarioTabelaPreco';
 import {
   listTabelaPrecoItensByProduto,
   TabelaPrecoItemComDescricao,
 } from '@/db/repositories/tabelaPrecoItem';
+import { useSessionStore } from '@/stores/session';
 import { fmtDate, fmtMoney } from '@/utils/format';
 
 const TIPO_PRODUTO_LABEL: Record<string, string> = {
@@ -59,6 +61,7 @@ export default function ProdutoDetalhe() {
   const params = useLocalSearchParams<{ id: string; h: string }>();
   const cdProduto = Number(params.id);
   const holdingId = Number(params.h);
+  const user = useSessionStore((s) => s.user);
   const [item, setItem] = useState<ProdutoRow | null>(null);
   const [tabelas, setTabelas] = useState<TabelaPrecoItemComDescricao[]>([]);
   const [auxLabels, setAuxLabels] = useState<Awaited<ReturnType<typeof getProdutoAuxiliarLabels>> | null>(null);
@@ -68,8 +71,9 @@ export default function ProdutoDetalhe() {
     (async () => {
       setLoading(true);
       const r = await getProdutoById(cdProduto, holdingId);
+      const cdTabelas = await getCdTabelasPermitidas(user?.userId, holdingId);
       const [tabs, labels] = await Promise.all([
-        listTabelaPrecoItensByProduto(cdProduto, holdingId),
+        listTabelaPrecoItensByProduto(cdProduto, holdingId, cdTabelas),
         r ? getProdutoAuxiliarLabels(r) : Promise.resolve(null),
       ]);
       setItem(r ?? null);
@@ -77,7 +81,7 @@ export default function ProdutoDetalhe() {
       setAuxLabels(labels);
       setLoading(false);
     })();
-  }, [cdProduto, holdingId]);
+  }, [cdProduto, holdingId, user?.userId]);
 
   if (loading) return <ActivityIndicator style={{ marginTop: 24 }} />;
   if (!item) return <Text style={{ padding: 16 }}>Produto não encontrado.</Text>;

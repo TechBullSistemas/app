@@ -229,6 +229,17 @@ const MAPS: Record<string, MapDef> = {
       { from: ['dsTabelaPreco', 'descricao'], to: 'descricao' },
     ],
   },
+  'usuario-tabela-preco': {
+    table: 'usuario_tabela_preco',
+    pk: ['holding_id', 'cd_usuario', 'cd_tabela_preco'],
+    needsHolding: true,
+    columns: [
+      { from: 'userId', to: 'cd_usuario' },
+      { from: 'cdTabelaPreco', to: 'cd_tabela_preco' },
+      { from: 'holdingId', to: 'holding_id' },
+      { from: 'dtUltAlteracao', to: 'dt_ult_alteracao' },
+    ],
+  },
   unidade: {
     table: 'unidade',
     pk: ['cd_unidade', 'holding_id'],

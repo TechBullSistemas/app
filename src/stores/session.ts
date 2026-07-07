@@ -26,6 +26,8 @@ export interface SessionUser {
   cdEstado?: string | null;
   cdRepresentante?: number | null;
   representante?: SessionRepresentante | null;
+  /** Máximo desconto permitido na alteração manual de preço unitário (%). */
+  prDescontoMax?: number;
 }
 
 interface SessionState {

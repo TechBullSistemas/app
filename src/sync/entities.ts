@@ -40,6 +40,7 @@ export const SYNC_ENTITIES: SyncEntityDef[] = [
   { key: 'natureza-operacao', endpoint: 'natureza-operacao', label: 'Naturezas de Operação', paged: false, insertFn: aux('natureza-operacao') },
   { key: 'tipo-venda', endpoint: 'tipo-venda', label: 'Tipos de Venda', paged: false, insertFn: aux('tipo-venda') },
   { key: 'tabela-preco', endpoint: 'tabela-preco', label: 'Tabelas de Preço', paged: false, insertFn: aux('tabela-preco') },
+  { key: 'usuario-tabela-preco', endpoint: 'usuario-tabela-preco', label: 'Tabelas de Preço por Usuário', paged: false, insertFn: aux('usuario-tabela-preco') },
   { key: 'unidade', endpoint: 'unidade', label: 'Unidades', paged: false, insertFn: aux('unidade') },
   { key: 'cidade', endpoint: 'cidade', label: 'Cidades', paged: false, insertFn: aux('cidade') },
   { key: 'cliente', endpoint: 'cliente', label: 'Clientes', paged: true, insertFn: bulkInsertClientes },

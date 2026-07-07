@@ -367,6 +367,14 @@ CREATE TABLE IF NOT EXISTS representante_saldo_flex (
   PRIMARY KEY (cd_representante, holding_id)
 );
 
+CREATE TABLE IF NOT EXISTS usuario_tabela_preco (
+  cd_usuario INTEGER NOT NULL,
+  cd_tabela_preco INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  dt_ult_alteracao TEXT,
+  PRIMARY KEY (holding_id, cd_usuario, cd_tabela_preco)
+);
+
 CREATE TABLE IF NOT EXISTS flex_movto (
   nr_movto INTEGER PRIMARY KEY AUTOINCREMENT,
   cd_empresa INTEGER NOT NULL,
@@ -769,6 +777,7 @@ const TABLES = [
   'produto_desconto',
   'condicao_pagto_preco',
   'representante_saldo_flex',
+  'usuario_tabela_preco',
   'flex_movto',
   'produto_custo_variavel',
 ];

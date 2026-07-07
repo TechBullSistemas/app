@@ -103,15 +103,23 @@ export interface TabelaPrecoItemComDescricao extends TabelaPrecoItemRow {
 export async function listTabelaPrecoItensByProduto(
   cdProduto: number,
   holdingId: number,
+  cdTabelas?: number[] | null,
 ): Promise<TabelaPrecoItemComDescricao[]> {
   const db = await getDb();
+  const params: (number | string)[] = [cdProduto, holdingId];
+  let filtroTabelas = '';
+  if (cdTabelas && cdTabelas.length > 0) {
+    const placeholders = cdTabelas.map(() => '?').join(', ');
+    filtroTabelas = ` AND tpi.cd_tabela_preco IN (${placeholders})`;
+    params.push(...cdTabelas);
+  }
   return db.getAllAsync<TabelaPrecoItemComDescricao>(
     `SELECT tpi.*, tp.descricao AS tabela_descricao
      FROM tabela_preco_item tpi
      JOIN tabela_preco tp
        ON tp.cd_tabela = tpi.cd_tabela_preco AND tp.holding_id = tpi.holding_id
-     WHERE tpi.cd_produto = ? AND tpi.holding_id = ?
+     WHERE tpi.cd_produto = ? AND tpi.holding_id = ?${filtroTabelas}
      ORDER BY tp.descricao`,
-    [cdProduto, holdingId],
+    params,
   );
 }

@@ -46,6 +46,11 @@ import {
   type ResultadoCalculoItem,
   type ContextoCalculoItem,
 } from '@/services/pricing';
+import {
+  mensagemDescontoPrecoAjustado,
+  resolvePrDescontoMax,
+  validacaoDescontoMaxUsuarioPreco,
+} from '@/services/pricing/descontoMaxUsuario';
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { getEmpresaParametros } from '@/db/repositories/parametros';
 
@@ -814,20 +819,46 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
    */
   function validarPrecoBlur(cdProduto: number) {
     const modo = empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
+    const prDescontoMax = resolvePrDescontoMax(user?.prDescontoMax);
     setItens((prev) =>
       prev.map((it) => {
         if (it.cdProduto !== cdProduto) return it;
-        // Sempre limpa o texto transitório no blur (display normalizado).
-        if (modo !== 'A' || it.vlMinimo == null || it.vlUnitario >= it.vlMinimo) {
-          return it.vlInput === undefined ? it : { ...it, vlInput: undefined };
+        let next = it;
+
+        if (
+          modo === 'A' &&
+          it.vlMinimo != null &&
+          it.vlUnitario < it.vlMinimo
+        ) {
+          Alert.alert(
+            'Valor abaixo do mínimo',
+            `Permitido somente alterar para valores superiores a ${fmtMoney(
+              it.vlMinimo,
+            )}.`,
+          );
+          next = { ...it, vlUnitario: it.vlMinimo, vlInput: undefined };
+        } else if (it.vlInput === undefined) {
+          return it;
+        } else {
+          next = { ...it, vlInput: undefined };
         }
-        Alert.alert(
-          'Valor abaixo do mínimo',
-          `Permitido somente alterar para valores superiores a ${fmtMoney(
-            it.vlMinimo,
-          )}.`,
-        );
-        return { ...it, vlUnitario: it.vlMinimo, vlInput: undefined };
+
+        const editadoManual = next.vlUnitario !== next.vlUnitarioOriginal;
+        const descontoMax = validacaoDescontoMaxUsuarioPreco({
+          prDescontoMax,
+          vlReferencia: next.vlUnitarioOriginal,
+          vlUnitario: next.vlUnitario,
+          editadoManualmente: editadoManual,
+        });
+        if (!descontoMax.ok && descontoMax.vlMinimo > 0) {
+          Alert.alert(
+            'Desconto máximo',
+            mensagemDescontoPrecoAjustado(prDescontoMax),
+          );
+          return { ...next, vlUnitario: descontoMax.vlMinimo };
+        }
+
+        return next;
       }),
     );
   }
@@ -1117,6 +1148,20 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           return Alert.alert(
             `Item "${it.descricao}"`,
             variacao.motivo ?? 'Variação de preço fora do permitido.',
+          );
+        }
+
+        const editadoManual = it.vlUnitario !== it.vlUnitarioOriginal;
+        const descontoMax = validacaoDescontoMaxUsuarioPreco({
+          prDescontoMax: user.prDescontoMax,
+          vlReferencia: it.vlUnitarioOriginal,
+          vlUnitario: it.vlUnitario,
+          editadoManualmente: editadoManual,
+        });
+        if (!descontoMax.ok) {
+          return Alert.alert(
+            `Item "${it.descricao}"`,
+            descontoMax.motivo ?? 'Preço unitário fora do limite permitido.',
           );
         }
       }
