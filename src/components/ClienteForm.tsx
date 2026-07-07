@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,9 +10,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import type { ClienteLocalInput } from '@/db/repositories/clientes';
+import { getCidadeById } from '@/db/repositories/auxiliares';
 import { ValidaCPFCNPJ } from '@/utils/validaCPFCNPJ';
 import { searchCNPJ } from '@/services/searchCNPJ';
 import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
+import { CidadePicker, type CidadeRow } from '@/components/CidadePicker';
 
 function onlyDigits(s: string) {
   return (s ?? '').replace(/\D/g, '');
@@ -64,6 +66,11 @@ function maskTelefone(raw: string) {
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
 
+function formatCidadeLabel(cidade: CidadeRow): string {
+  const nome = cidade.nome?.trim() || `Cidade #${cidade.cd_cidade}`;
+  return cidade.cd_estado ? `${nome}/${cidade.cd_estado}` : nome;
+}
+
 interface Props {
   initial?: Partial<ClienteLocalInput>;
   onSubmit: (data: ClienteLocalInput) => Promise<void> | void;
@@ -100,6 +107,24 @@ export function ClienteForm({
   const [cpfCnpjErro, setCpfCnpjErro] = useState<string | null>(null);
   const [buscandoCnpj, setBuscandoCnpj] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [cidadeLabel, setCidadeLabel] = useState<string | null>(null);
+  const [cidadePickerOpen, setCidadePickerOpen] = useState(false);
+
+  useEffect(() => {
+    const cdCidade = initial?.cd_cidade;
+    if (!cdCidade) {
+      setCidadeLabel(null);
+      return;
+    }
+    let alive = true;
+    getCidadeById(cdCidade).then((cidade) => {
+      if (!alive) return;
+      setCidadeLabel(cidade ? formatCidadeLabel(cidade) : null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [initial?.cd_cidade]);
 
   function set<K extends Field>(key: K, value: ClienteLocalInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -145,27 +170,45 @@ export function ClienteForm({
         setAviso('Não foi possível obter dados do CNPJ.');
         return;
       }
-      setForm((prev) => ({
-        ...prev,
-        nome: prev.nome?.trim()
-          ? prev.nome
-          : res.nomeFantasia || res.razaoSocial || prev.nome,
-        razao_social: prev.razao_social?.trim()
-          ? prev.razao_social
-          : res.razaoSocial || prev.razao_social,
-        email: prev.email?.trim() ? prev.email : res.email || prev.email,
-        fone: prev.fone?.trim()
-          ? prev.fone
-          : res.telefone
-          ? maskTelefone(res.telefone)
-          : prev.fone,
-        cep: prev.cep?.trim() ? prev.cep : res.cep ? maskCep(res.cep) : prev.cep,
-        endereco: prev.endereco?.trim()
-          ? prev.endereco
-          : res.endereco || prev.endereco,
-        numero: prev.numero?.trim() ? prev.numero : res.numero || prev.numero,
-        bairro: prev.bairro?.trim() ? prev.bairro : res.bairro || prev.bairro,
-      }));
+      let cidadeIbgeParaLabel: number | null = null;
+      setForm((prev) => {
+        const shouldFillCidade =
+          prev.cd_cidade == null && res.cidadeIbgeId != null;
+        if (shouldFillCidade) {
+          cidadeIbgeParaLabel = res.cidadeIbgeId;
+        }
+        return {
+          ...prev,
+          nome: prev.nome?.trim()
+            ? prev.nome
+            : res.nomeFantasia || res.razaoSocial || prev.nome,
+          razao_social: prev.razao_social?.trim()
+            ? prev.razao_social
+            : res.razaoSocial || prev.razao_social,
+          email: prev.email?.trim() ? prev.email : res.email || prev.email,
+          fone: prev.fone?.trim()
+            ? prev.fone
+            : res.telefone
+            ? maskTelefone(res.telefone)
+            : prev.fone,
+          cep: prev.cep?.trim() ? prev.cep : res.cep ? maskCep(res.cep) : prev.cep,
+          endereco: prev.endereco?.trim()
+            ? prev.endereco
+            : res.endereco || prev.endereco,
+          numero: prev.numero?.trim() ? prev.numero : res.numero || prev.numero,
+          bairro: prev.bairro?.trim() ? prev.bairro : res.bairro || prev.bairro,
+          cd_cidade:
+            prev.cd_cidade != null
+              ? prev.cd_cidade
+              : res.cidadeIbgeId ?? prev.cd_cidade,
+        };
+      });
+      if (cidadeIbgeParaLabel) {
+        const cidade = await getCidadeById(cidadeIbgeParaLabel);
+        if (cidade) {
+          setCidadeLabel(formatCidadeLabel(cidade));
+        }
+      }
       setAviso('Dados preenchidos a partir do CNPJ.');
     } catch {
       setAviso('Falha ao consultar o CNPJ.');
@@ -350,28 +393,35 @@ export function ClienteForm({
         onChangeText={(t) => set('bairro', t)}
       />
 
-      <View style={styles.row}>
-        <View style={{ flex: 1 }}>
-          <Campo
-            label="CEP"
-            value={form.cep ?? ''}
-            onChangeText={(t) => set('cep', maskCep(t))}
-            keyboardType="numeric"
-            maxLength={9}
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Campo
-            label="Cód. Cidade"
-            value={form.cd_cidade != null ? String(form.cd_cidade) : ''}
-            onChangeText={(t) => {
-              const n = Number(t.replace(/\D/g, ''));
-              set('cd_cidade', Number.isFinite(n) && n > 0 ? n : null);
-            }}
-            keyboardType="numeric"
-          />
-        </View>
+      <Campo
+        label="CEP"
+        value={form.cep ?? ''}
+        onChangeText={(t) => set('cep', maskCep(t))}
+        keyboardType="numeric"
+        maxLength={9}
+      />
+
+      <View>
+        <Text style={styles.label}>Cidade</Text>
+        <Pressable
+          style={styles.field}
+          onPress={() => setCidadePickerOpen(true)}
+        >
+          <Text style={cidadeLabel ? styles.value : styles.placeholder}>
+            {cidadeLabel ?? 'Selecionar cidade...'}
+          </Text>
+        </Pressable>
       </View>
+
+      <CidadePicker
+        visible={cidadePickerOpen}
+        onClose={() => setCidadePickerOpen(false)}
+        selectedId={form.cd_cidade}
+        onSelect={(cidade) => {
+          set('cd_cidade', cidade.cd_cidade);
+          setCidadeLabel(formatCidadeLabel(cidade));
+        }}
+      />
 
       {erro ? <Text style={styles.erro}>{erro}</Text> : null}
 
@@ -424,6 +474,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
   row: { flexDirection: 'row', gap: 8 },
   label: { color: '#334155', fontWeight: '600', marginBottom: 4, fontSize: 13 },
+  field: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    padding: 10,
+  },
+  value: { color: '#0f172a', fontWeight: '600', fontSize: 15 },
+  placeholder: { color: '#94a3b8', fontSize: 15 },
   input: {
     backgroundColor: '#fff',
     borderWidth: 1,

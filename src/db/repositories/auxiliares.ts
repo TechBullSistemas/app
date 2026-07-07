@@ -320,3 +320,26 @@ export async function listMensagens(): Promise<any[]> {
   const db = await getDb();
   return db.getAllAsync<any>('SELECT * FROM mensagem ORDER BY dt_envio DESC');
 }
+
+export interface CidadeRow {
+  cd_cidade: number;
+  nome: string | null;
+  cd_estado: number | null;
+}
+
+export async function listCidades(): Promise<CidadeRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<CidadeRow>(
+    'SELECT cd_cidade, nome, cd_estado FROM cidade ORDER BY nome',
+  );
+}
+
+export async function getCidadeById(
+  cdCidade: number,
+): Promise<CidadeRow | null> {
+  const db = await getDb();
+  return db.getFirstAsync<CidadeRow>(
+    'SELECT cd_cidade, nome, cd_estado FROM cidade WHERE cd_cidade = ?',
+    [cdCidade],
+  );
+}
