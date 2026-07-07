@@ -319,6 +319,16 @@ export async function purgeSentOutbox() {
   );
 }
 
+/** Itens presos em 'sending' (upload interrompido) voltam para 'pending'. */
+export async function resetStaleSendingOutbox() {
+  const db = await getDb();
+  await db.execAsync(
+    `UPDATE outbox_cliente SET status = 'pending' WHERE status = 'sending';
+     UPDATE outbox_venda    SET status = 'pending' WHERE status = 'sending';
+     UPDATE outbox_visita   SET status = 'pending' WHERE status = 'sending';`,
+  );
+}
+
 export async function countPending(): Promise<{
   vendas: number;
   visitas: number;

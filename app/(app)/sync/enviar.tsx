@@ -101,10 +101,15 @@ export default function EnviarInformacoesScreen() {
           `Clientes: ${r.clientes} • Vendas: ${r.vendas} • Visitas: ${r.visitas}`,
         );
       }
-      refresh();
     } catch (err) {
       console.error(err);
-      Alert.alert('Erro', 'Não foi possível concluir o envio.');
+      const errMsg = useSyncStore.getState().uploadError;
+      Alert.alert(
+        'Erro',
+        errMsg || 'Não foi possível concluir o envio.',
+      );
+    } finally {
+      refresh();
     }
   }
 

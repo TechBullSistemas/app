@@ -3,6 +3,8 @@ import { Alert } from 'react-native';
 import { API_URL } from '@/config/env';
 import { useSessionStore } from '@/stores/session';
 
+export const UPLOAD_REQUEST_TIMEOUT_MS = 15000;
+
 let instance: AxiosInstance | null = null;
 let sessionAlertShown = false;
 
