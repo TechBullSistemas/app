@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import { OnlineBadge } from '@/components/OnlineBadge';
 import { useSessionStore } from '@/stores/session';
@@ -40,9 +40,19 @@ export default function HomeScreen() {
   const versionLabel = getVersionLabel();
   const updatesEnabled = isUpdatesEnabled();
 
-  useEffect(() => {
-    countPending().then(setPending).catch(() => undefined);
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      countPending()
+        .then((counts) => {
+          if (alive) setPending(counts);
+        })
+        .catch(() => undefined);
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
 
   async function handleCheckUpdate() {
     if (checkingUpdate) return;
