@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 
 const TOKEN_KEY = 'techbull.token';
 const USER_KEY = 'techbull.user';
+const EXPIRES_KEY = 'techbull.expiresAt';
 
 export interface SessionRepresentante {
   vlSaldoFlex: number;
@@ -33,23 +34,31 @@ export interface SessionUser {
 interface SessionState {
   token: string | null;
   user: SessionUser | null;
+  expiresAt: string | null;
   hydrated: boolean;
   hydrate: () => Promise<void>;
-  setSession: (token: string, user: SessionUser) => Promise<void>;
+  setSession: (
+    token: string,
+    user: SessionUser,
+    expiresAt?: string | null,
+  ) => Promise<void>;
   refreshUser: () => Promise<void>;
+  isSessionExpired: () => boolean;
   clear: () => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   token: null,
   user: null,
+  expiresAt: null,
   hydrated: false,
   hydrate: async () => {
     try {
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
       const userJson = await SecureStore.getItemAsync(USER_KEY);
+      const expiresAt = await SecureStore.getItemAsync(EXPIRES_KEY);
       const user = userJson ? (JSON.parse(userJson) as SessionUser) : null;
-      set({ token, user, hydrated: true });
+      set({ token, user, expiresAt, hydrated: true });
       if (token && user) {
         get()
           .refreshUser()
@@ -62,23 +71,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({ hydrated: true });
     }
   },
-  setSession: async (token, user) => {
+  setSession: async (token, user, expiresAt = null) => {
     await SecureStore.setItemAsync(TOKEN_KEY, token);
     await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
-    set({ token, user });
+    if (expiresAt) {
+      await SecureStore.setItemAsync(EXPIRES_KEY, expiresAt);
+    } else {
+      await SecureStore.deleteItemAsync(EXPIRES_KEY);
+    }
+    set({ token, user, expiresAt: expiresAt ?? null });
+  },
+  isSessionExpired: () => {
+    const { expiresAt } = get();
+    if (!expiresAt) return false;
+    return new Date(expiresAt).getTime() <= Date.now();
   },
   refreshUser: async () => {
     if (!get().token) return;
-    const { meRequest } = await import('@/api/auth');
-    const data = await meRequest();
-    if (!data?.user) return;
-    const merged: SessionUser = { ...(get().user || {}), ...data.user };
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(merged));
-    set({ user: merged });
+    try {
+      const { meRequest } = await import('@/api/auth');
+      const data = await meRequest();
+      if (!data?.user) return;
+      const merged: SessionUser = { ...(get().user || {}), ...data.user };
+      await SecureStore.setItemAsync(USER_KEY, JSON.stringify(merged));
+      set({ user: merged });
+    } catch (err) {
+      console.warn('Falha ao refrescar dados do usuário:', err);
+    }
   },
   clear: async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(USER_KEY);
-    set({ token: null, user: null });
+    await SecureStore.deleteItemAsync(EXPIRES_KEY);
+    set({ token: null, user: null, expiresAt: null });
   },
 }));

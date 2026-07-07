@@ -1,4 +1,4 @@
-import { getApi, extractApiErrorMessage } from '@/api/client';
+import { getApi, extractApiErrorMessage, isUnauthorizedApiError } from '@/api/client';
 import {
   deleteOutboxCliente,
   deleteOutboxVenda,
@@ -19,9 +19,23 @@ import {
 } from '@/db/repositories/clientes';
 import { deleteVisitaLocal } from '@/db/repositories/visitas';
 import { useSyncStore, UploadItemProgress } from '@/stores/sync';
+import { useSessionStore } from '@/stores/session';
 
-export async function runUploadSync() {
+export interface UploadSyncResult {
+  clientes: number;
+  vendas: number;
+  visitas: number;
+  sessionExpired?: boolean;
+}
+
+export async function runUploadSync(): Promise<UploadSyncResult> {
   const store = useSyncStore.getState();
+
+  if (useSessionStore.getState().isSessionExpired()) {
+    const msg = 'Sessão expirada. Faça login novamente.';
+    store.finishUpload(false, msg);
+    return { clientes: 0, vendas: 0, visitas: 0, sessionExpired: true };
+  }
 
   // Limpa entradas legadas que ficaram com status 'sent' em versões anteriores.
   try {
@@ -89,11 +103,31 @@ export async function runUploadSync() {
   }
 
   let firstError: string | null = null;
+  let sessionExpired = false;
 
   const api = getApi();
 
+  const handleItemError = async (
+    err: unknown,
+    clientId: string,
+    setStatusFn: (
+      id: string,
+      status: 'error',
+      patch?: { lastError?: string },
+    ) => Promise<void>,
+  ) => {
+    const msg = extractApiErrorMessage(err);
+    firstError = firstError || msg;
+    await setStatusFn(clientId, 'error', { lastError: msg });
+    store.setUploadItem(clientId, { status: 'error', message: msg });
+    if (isUnauthorizedApiError(err)) {
+      sessionExpired = true;
+    }
+  };
+
   // 1. Clientes novos primeiro — para que vendas/visitas apontem para o cd_cliente real
   for (const c of clientes) {
+    if (sessionExpired) break;
     store.setUploadItem(c.client_id, { status: 'sending' });
     await setOutboxClienteStatus(c.client_id, 'sending');
     try {
@@ -117,10 +151,8 @@ export async function runUploadSync() {
       await deleteOutboxCliente(c.client_id);
       store.setUploadItem(c.client_id, { status: 'sent' });
     } catch (err) {
-      const msg = extractApiErrorMessage(err);
-      firstError = firstError || msg;
-      await setOutboxClienteStatus(c.client_id, 'error', { lastError: msg });
-      store.setUploadItem(c.client_id, { status: 'error', message: msg });
+      await handleItemError(err, c.client_id, setOutboxClienteStatus);
+      if (sessionExpired) break;
     }
   }
 
@@ -129,6 +161,7 @@ export async function runUploadSync() {
   const visitasParaEnviar = await listPendingVisitas();
 
   for (const v of vendasParaEnviar) {
+    if (sessionExpired) break;
     store.setUploadItem(v.client_id, { status: 'sending' });
     await setOutboxVendaStatus(v.client_id, 'sending');
     // Defesa: se a venda referencia um cd_cliente local (negativo) é porque
@@ -155,14 +188,13 @@ export async function runUploadSync() {
       await deleteOutboxVenda(v.client_id);
       store.setUploadItem(v.client_id, { status: 'sent' });
     } catch (err) {
-      const msg = extractApiErrorMessage(err);
-      firstError = firstError || msg;
-      await setOutboxVendaStatus(v.client_id, 'error', { lastError: msg });
-      store.setUploadItem(v.client_id, { status: 'error', message: msg });
+      await handleItemError(err, v.client_id, setOutboxVendaStatus);
+      if (sessionExpired) break;
     }
   }
 
   for (const v of visitasParaEnviar) {
+    if (sessionExpired) break;
     store.setUploadItem(v.client_id, { status: 'sending' });
     await setOutboxVisitaStatus(v.client_id, 'sending');
     if (v.cd_cliente < 0) {
@@ -184,10 +216,8 @@ export async function runUploadSync() {
       await deleteOutboxVisita(v.client_id);
       store.setUploadItem(v.client_id, { status: 'sent' });
     } catch (err) {
-      const msg = extractApiErrorMessage(err);
-      firstError = firstError || msg;
-      await setOutboxVisitaStatus(v.client_id, 'error', { lastError: msg });
-      store.setUploadItem(v.client_id, { status: 'error', message: msg });
+      await handleItemError(err, v.client_id, setOutboxVisitaStatus);
+      if (sessionExpired) break;
     }
   }
 
@@ -196,5 +226,6 @@ export async function runUploadSync() {
     clientes: clientes.length,
     vendas: vendasParaEnviar.length,
     visitas: visitasParaEnviar.length,
+    sessionExpired: sessionExpired || undefined,
   };
 }

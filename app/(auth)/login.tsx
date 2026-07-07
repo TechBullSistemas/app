@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { loginRequest } from '@/api/auth';
 import { useSessionStore } from '@/stores/session';
-import { extractApiErrorMessage } from '@/api/client';
+import { extractApiErrorMessage, resetSessionAlertFlag } from '@/api/client';
 import { getVersionLabel } from '@/config/version';
 
 export default function LoginScreen() {
@@ -31,7 +31,8 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const res = await loginRequest(email.trim(), senha);
-      await setSession(res.token, res.user);
+      resetSessionAlertFlag();
+      await setSession(res.token, res.user, res.expiresAt);
     } catch (err) {
       Alert.alert('Erro ao entrar', extractApiErrorMessage(err));
     } finally {

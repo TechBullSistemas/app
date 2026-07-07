@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { isSessionExpiredMessage } from '@/api/client';
 import { useSyncStore, UploadItemProgress } from '@/stores/sync';
+import { useSessionStore } from '@/stores/session';
 import { runUploadSync } from '@/sync/upload';
 import { useOnlineStore } from '@/stores/online';
 import {
@@ -21,7 +23,9 @@ import {
 
 export default function EnviarInformacoesScreen() {
   const isOnline = useOnlineStore((s) => s.isOnline);
-  const { uploadRunning, uploadItems, uploadError, uploadFinishedAt } = useSyncStore();
+  const isSessionExpired = useSessionStore((s) => s.isSessionExpired);
+  const { uploadRunning, uploadItems, uploadError, uploadFinishedAt } =
+    useSyncStore();
   const [pending, setPending] = useState<UploadItemProgress[]>([]);
 
   async function refresh() {
@@ -31,7 +35,13 @@ export default function EnviarInformacoesScreen() {
       listOutboxVisitas(),
     ]);
     const norm = (s: string): UploadItemProgress['status'] =>
-      s === 'sent' ? 'sent' : s === 'sending' ? 'sending' : s === 'error' ? 'error' : 'pending';
+      s === 'sent'
+        ? 'sent'
+        : s === 'sending'
+        ? 'sending'
+        : s === 'error'
+        ? 'error'
+        : 'pending';
     const items: UploadItemProgress[] = [
       ...cs.map<UploadItemProgress>((c) => ({
         clientId: c.client_id,
@@ -67,15 +77,34 @@ export default function EnviarInformacoesScreen() {
       Alert.alert('Sem conexão', 'Conecte-se à internet para enviar.');
       return;
     }
+    if (isSessionExpired()) {
+      Alert.alert(
+        'Sessão expirada',
+        'Faça login novamente para enviar as pendências.',
+      );
+      return;
+    }
     try {
       const r = await runUploadSync();
-      Alert.alert(
-        'Envio concluído',
-        `Clientes: ${r.clientes} • Vendas: ${r.vendas} • Visitas: ${r.visitas}`,
-      );
+      const err = useSyncStore.getState().uploadError;
+
+      if (r.sessionExpired || isSessionExpiredMessage(err)) {
+        Alert.alert(
+          'Sessão expirada',
+          'Faça login novamente para enviar as pendências.',
+        );
+      } else if (err) {
+        Alert.alert('Falha no envio', err);
+      } else {
+        Alert.alert(
+          'Envio concluído',
+          `Clientes: ${r.clientes} • Vendas: ${r.vendas} • Visitas: ${r.visitas}`,
+        );
+      }
       refresh();
     } catch (err) {
       console.error(err);
+      Alert.alert('Erro', 'Não foi possível concluir o envio.');
     }
   }
 
@@ -136,8 +165,10 @@ export default function EnviarInformacoesScreen() {
 
 function StatusIcon({ status }: { status: UploadItemProgress['status'] }) {
   if (status === 'sending') return <ActivityIndicator />;
-  if (status === 'sent') return <Ionicons name="checkmark-circle" size={22} color="#16a34a" />;
-  if (status === 'error') return <Ionicons name="alert-circle" size={22} color="#dc2626" />;
+  if (status === 'sent')
+    return <Ionicons name="checkmark-circle" size={22} color="#16a34a" />;
+  if (status === 'error')
+    return <Ionicons name="alert-circle" size={22} color="#dc2626" />;
   return <Ionicons name="time-outline" size={22} color="#64748b" />;
 }
 
