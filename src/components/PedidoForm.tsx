@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Image,
   Pressable,
   StyleSheet,
   Switch,
@@ -15,6 +16,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { ClientePicker } from '@/components/ClientePicker';
 import { ProdutoPicker } from '@/components/ProdutoPicker';
+import { FotoProdutoModal } from '@/components/FotoProdutoModal';
 import { TabelaPrecoPicker, type TabelaPrecoOpt } from '@/components/TabelaPrecoPicker';
 import {
   CondicaoPagtoPicker,
@@ -69,6 +71,8 @@ interface ItemPedido {
   // Fator de venda do produto (produto.fator_venda): passo e múltiplo quando > 0.
   // Fator 0 = quantidade livre (inicia em 1, decimais sem restrição).
   fatorVenda: number;
+  // Foto do produto (cache local ou URL remota) para miniatura no card.
+  fotoUri: string | null;
   // Texto transitório dos inputs de quantidade e preço durante a digitação.
   // Sem isso, o input controlado por String(qt) engole a vírgula decimal:
   // "2," parseia para 2, o estado re-renderiza e a vírgula some antes da
@@ -179,6 +183,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [condPrecoOpenFor, setCondPrecoOpenFor] = useState<number | null>(null);
   // Modal de detalhes do preço aberto para um produto específico (cdProduto).
   const [precoDetalheFor, setPrecoDetalheFor] = useState<number | null>(null);
+  // Foto expandida do item da venda (cdProduto), aberta pela miniatura.
+  const [fotoExpandidaFor, setFotoExpandidaFor] = useState<number | null>(null);
   // Cache das condições de preço calculadas. Chave composta:
   // `cdProduto|qt|cdTabelaPreco|cdCondicaoPagto|cdCliente` — qualquer
   // mudança nesses parâmetros recalcula (espelha o legado, que chama
@@ -409,6 +415,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             permiteSaldoNegativo: extractPermiteSaldoNegativo(prod?.raw_json),
             fatorVenda: fator,
             rawProduto: raw,
+            fotoUri: prod?.foto_local || prod?.foto_url || null,
             cdCondicaoPreco:
               it.cdCondicaoPreco != null ? Number(it.cdCondicaoPreco) : null,
             condicaoPrecoLabel: it.condicaoPrecoLabel ?? null,
@@ -717,6 +724,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           qtDisponivel: disponivel,
           permiteSaldoNegativo: permite,
           fatorVenda: fator,
+          fotoUri: p.foto_local || p.foto_url || null,
           rawProduto: raw,
         },
       ]);
@@ -1452,15 +1460,30 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         itens.map((it) => (
           <View key={it.cdProduto} style={styles.itemBox}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.value}>
-                {it.descricao} ({it.cdProduto})
-              </Text>
-              {it.qtDisponivel != null && (
-                <Text style={styles.subtle}>
-                  Estoque: {it.qtDisponivel}
-                  {it.permiteSaldoNegativo ? ' (permite negativo)' : ''}
-                </Text>
-              )}
+              <View style={styles.itemHeaderRow}>
+                {it.fotoUri && (
+                  <Pressable
+                    onPress={() => setFotoExpandidaFor(it.cdProduto)}
+                    hitSlop={6}
+                  >
+                    <Image
+                      source={{ uri: it.fotoUri }}
+                      style={styles.itemThumb}
+                    />
+                  </Pressable>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.value}>
+                    {it.descricao} ({it.cdProduto})
+                  </Text>
+                  {it.qtDisponivel != null && (
+                    <Text style={styles.subtle}>
+                      Estoque: {it.qtDisponivel}
+                      {it.permiteSaldoNegativo ? ' (permite negativo)' : ''}
+                    </Text>
+                  )}
+                </View>
+              </View>
               <View style={styles.itemRow}>
                 <View style={{ flex: 1.7 }}>
                   <Text style={styles.itemLbl}>Qtd</Text>
@@ -1838,6 +1861,20 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         selectedId={cdTabelaPrecoResolvida ?? null}
         holdingId={user!.holdingId}
       />
+      {(() => {
+        const it =
+          fotoExpandidaFor != null
+            ? itens.find((i) => i.cdProduto === fotoExpandidaFor)
+            : null;
+        return (
+          <FotoProdutoModal
+            visible={fotoExpandidaFor != null}
+            uri={it?.fotoUri ?? null}
+            descricao={it?.descricao}
+            onClose={() => setFotoExpandidaFor(null)}
+          />
+        );
+      })()}
       {precoDetalheFor != null && (() => {
         const it = itens.find((i) => i.cdProduto === precoDetalheFor);
         if (!it) return null;
@@ -2004,6 +2041,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   itemRow: { flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'flex-end' },
+  itemHeaderRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  itemThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+  },
   itemLbl: { fontSize: 11, color: '#64748b' },
   condicaoPrecoBtn: {
     flexDirection: 'row',

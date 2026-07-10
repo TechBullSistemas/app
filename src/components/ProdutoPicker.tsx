@@ -15,6 +15,7 @@ import {
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
 import { listProdutos, ProdutoRow } from '@/db/repositories/produtos';
+import { FotoProdutoModal } from '@/components/FotoProdutoModal';
 
 interface Props {
   visible: boolean;
@@ -25,6 +26,10 @@ interface Props {
 export function ProdutoPicker({ visible, onClose, onSelect }: Props) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ProdutoRow[]>([]);
+  const [fotoExpandida, setFotoExpandida] = useState<{
+    uri: string;
+    descricao: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -72,10 +77,20 @@ export function ProdutoPicker({ visible, onClose, onSelect }: Props) {
                 }}
               >
                 {item.foto_local || item.foto_url ? (
-                  <Image
-                    source={{ uri: (item.foto_local || item.foto_url) as string }}
-                    style={styles.thumb}
-                  />
+                  <Pressable
+                    onPress={() =>
+                      setFotoExpandida({
+                        uri: (item.foto_local || item.foto_url) as string,
+                        descricao: item.descricao,
+                      })
+                    }
+                    hitSlop={6}
+                  >
+                    <Image
+                      source={{ uri: (item.foto_local || item.foto_url) as string }}
+                      style={styles.thumb}
+                    />
+                  </Pressable>
                 ) : (
                   <View style={[styles.thumb, styles.thumbEmpty]} />
                 )}
@@ -94,6 +109,12 @@ export function ProdutoPicker({ visible, onClose, onSelect }: Props) {
                 </View>
               </Pressable>
             )}
+          />
+          <FotoProdutoModal
+            visible={fotoExpandida != null}
+            uri={fotoExpandida?.uri ?? null}
+            descricao={fotoExpandida?.descricao}
+            onClose={() => setFotoExpandida(null)}
           />
         </SafeAreaView>
       </SafeAreaProvider>
