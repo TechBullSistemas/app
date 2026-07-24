@@ -32,6 +32,7 @@ export default function AppLayout() {
       <Stack.Screen name="clientes/produto/[cdProduto]" options={{ title: 'Produto do Cliente' }} />
       <Stack.Screen name="pedidos/index" options={{ title: 'Consulta de Pedidos' }} />
       <Stack.Screen name="pedidos/[clientId]" options={{ title: 'Pedido' }} />
+      <Stack.Screen name="pedidos/remoto/[nrPrevenda]" options={{ title: 'Pré-venda' }} />
       <Stack.Screen name="pedidos/novo" options={{ title: 'Novo Pedido' }} />
       <Stack.Screen name="pedidos/editar/[clientId]" options={{ title: 'Editar Pedido' }} />
       <Stack.Screen name="visitas/[clientId]" options={{ title: 'Editar Visita' }} />

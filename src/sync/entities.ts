@@ -10,6 +10,7 @@ import { bulkInsertProdutos } from '@/db/repositories/produtos';
 import { bulkInsertClientes } from '@/db/repositories/clientes';
 import { bulkInsertNotas, bulkInsertTitulos } from '@/db/repositories/notas';
 import { bulkInsertVisitas } from '@/db/repositories/visitas';
+import { bulkInsertPrevendas } from '@/db/repositories/prevendas';
 import { bulkInsertGeneric } from '@/db/repositories/auxiliares';
 import {
   bulkInsertImpostos,
@@ -48,6 +49,7 @@ export const SYNC_ENTITIES: SyncEntityDef[] = [
   { key: 'nota-fiscal-saida', endpoint: 'nota-fiscal-saida', label: 'Notas Fiscais (Vendas)', paged: true, insertFn: bulkInsertNotas },
   { key: 'titulo-receber', endpoint: 'titulo-receber', label: 'Títulos a Receber', paged: true, insertFn: bulkInsertTitulos },
   { key: 'visita', endpoint: 'visita', label: 'Visitas', paged: true, insertFn: bulkInsertVisitas },
+  { key: 'prevenda', endpoint: 'prevenda', label: 'Pré-vendas', paged: true, insertFn: bulkInsertPrevendas },
   // Motor de precificação
   { key: 'imposto', endpoint: 'imposto', label: 'Impostos', paged: false, insertFn: bulkInsertImpostos },
   { key: 'imposto-uf', endpoint: 'imposto-uf', label: 'Impostos por UF', paged: false, insertFn: bulkInsertImpostoUf },

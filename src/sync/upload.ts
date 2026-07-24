@@ -24,6 +24,7 @@ import {
   ensureClienteOutbox,
 } from '@/db/repositories/clientes';
 import { deleteVisitaLocal } from '@/db/repositories/visitas';
+import { upsertPrevendaFromUpload } from '@/db/repositories/prevendas';
 import { useSyncStore, UploadItemProgress } from '@/stores/sync';
 import { useSessionStore } from '@/stores/session';
 
@@ -195,12 +196,53 @@ export async function runUploadSync(): Promise<UploadSyncResult> {
       }
       try {
         const fullPayload = JSON.parse(v.payload);
-        const { __display: _ignore, ...payload } = fullPayload;
-        await api.post(
+        const { __display: display, ...payload } = fullPayload;
+        const { data } = await api.post(
           '/upload/venda',
           { clientId: v.client_id, ...payload },
           uploadConfig,
         );
+        const prevenda = data?.prevenda ?? null;
+        if (prevenda?.nrPrevenda) {
+          const nmCliente =
+            display?.clienteNome ??
+            prevenda.cliente?.nmCliente ??
+            prevenda.nmCliente ??
+            null;
+          try {
+            await upsertPrevendaFromUpload(
+              {
+                ...prevenda,
+                clientId: v.client_id,
+                idSincronizadoDuapi: prevenda.idSincronizadoDuapi ?? false,
+                nmCliente,
+                dsFormaPagamento:
+                  display?.formaPagamentoLabel ??
+                  prevenda.dsFormaPagamento ??
+                  prevenda.formaPagamento?.dsFormaPagamento ??
+                  null,
+                prevendaItem: (prevenda.prevendaItem ?? payload.prevendaItem ?? []).map(
+                  (it: any, idx: number) => ({
+                    ...it,
+                    dsProduto:
+                      it.dsProduto ??
+                      display?.itens?.[idx]?.descricao ??
+                      null,
+                  }),
+                ),
+                prevendaTitulo:
+                  prevenda.prevendaTitulo ?? payload.prevendaTitulo ?? [],
+                prevendaFormaPagamento:
+                  prevenda.prevendaFormaPagamento ??
+                  payload.prevendaFormaPagamento ??
+                  [],
+              },
+              v.holding_id,
+            );
+          } catch {
+            // best-effort: próximo download sync traz a prevenda
+          }
+        }
         await deleteOutboxVenda(v.client_id);
         store.setUploadItem(v.client_id, { status: 'sent' });
       } catch (err) {

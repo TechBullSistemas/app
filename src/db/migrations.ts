@@ -224,6 +224,45 @@ CREATE TABLE IF NOT EXISTS visita (
 );
 CREATE INDEX IF NOT EXISTS idx_visita_cliente ON visita(cd_cliente, holding_id);
 
+-- Pré-vendas baixadas do ERP (consulta Pedidos / status Duapi)
+CREATE TABLE IF NOT EXISTS prevenda (
+  nr_prevenda INTEGER NOT NULL,
+  cd_empresa INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  cd_cliente INTEGER NOT NULL,
+  nm_cliente TEXT,
+  cd_funcionario INTEGER,
+  dt_emissao TEXT,
+  vl_total REAL,
+  vl_bruto REAL,
+  obs TEXT,
+  nr_nota INTEGER,
+  serie_nota TEXT,
+  id_situacao TEXT,
+  cd_forma_pagamento INTEGER,
+  ds_forma_pagamento TEXT,
+  client_id TEXT,
+  id_sincronizado_duapi INTEGER NOT NULL DEFAULT 0,
+  raw_json TEXT,
+  PRIMARY KEY (nr_prevenda, cd_empresa, holding_id)
+);
+CREATE INDEX IF NOT EXISTS idx_prevenda_dt ON prevenda(dt_emissao);
+CREATE INDEX IF NOT EXISTS idx_prevenda_cliente ON prevenda(cd_cliente, holding_id);
+
+CREATE TABLE IF NOT EXISTS prevenda_item (
+  nr_prevenda INTEGER NOT NULL,
+  cd_empresa INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  cd_produto INTEGER NOT NULL,
+  qt_produto REAL,
+  vl_unitario REAL,
+  vl_desconto REAL,
+  vl_acrescimo REAL,
+  ds_produto TEXT,
+  ds_unidade TEXT,
+  PRIMARY KEY (nr_prevenda, cd_empresa, holding_id, cd_produto)
+);
+
 -- Outboxes (pendentes de upload)
 CREATE TABLE IF NOT EXISTS outbox_venda (
   client_id TEXT PRIMARY KEY,
@@ -769,6 +808,8 @@ const TABLES = [
   'nota_fiscal_saida',
   'titulo_receber',
   'visita',
+  'prevenda_item',
+  'prevenda',
   // Motor de precificação
   'imposto',
   'imposto_uf',
