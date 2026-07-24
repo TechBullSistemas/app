@@ -1,17 +1,12 @@
 import { useState } from 'react';
 import {
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import DateTimePicker, {
-  DateTimePickerAndroid,
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { brToDate, dateToBr, maskDateBR } from '@/utils/format';
@@ -24,6 +19,54 @@ interface Props {
   maximumDate?: Date;
 }
 
+const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const MONTHS = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function isDisabled(day: Date, minimumDate?: Date, maximumDate?: Date): boolean {
+  const d = startOfDay(day).getTime();
+  if (minimumDate && d < startOfDay(minimumDate).getTime()) return true;
+  if (maximumDate && d > startOfDay(maximumDate).getTime()) return true;
+  return false;
+}
+
+function buildMonthGrid(year: number, month: number): (Date | null)[] {
+  const first = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startWeekday = first.getDay(); // 0 = Sunday
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push(new Date(year, month, day));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 export function DateInput({
   label,
   value,
@@ -31,39 +74,29 @@ export function DateInput({
   minimumDate,
   maximumDate,
 }: Props) {
-  const [showIosPicker, setShowIosPicker] = useState(false);
-  const pickerDate = brToDate(value) ?? new Date();
+  const [open, setOpen] = useState(false);
+  const selected = brToDate(value) ?? new Date();
+  const [cursor, setCursor] = useState(
+    () => new Date(selected.getFullYear(), selected.getMonth(), 1),
+  );
+
+  function openPicker() {
+    const base = brToDate(value) ?? new Date();
+    setCursor(new Date(base.getFullYear(), base.getMonth(), 1));
+    setOpen(true);
+  }
 
   function applyDate(d: Date) {
     onChange(dateToBr(d));
+    setOpen(false);
   }
 
-  function openPicker() {
-    if (Platform.OS === 'web') return;
-    if (Platform.OS === 'android') {
-      DateTimePickerAndroid.open({
-        value: pickerDate,
-        mode: 'date',
-        minimumDate,
-        maximumDate,
-        onChange: (event: DateTimePickerEvent, selected?: Date) => {
-          if (event.type === 'set' && selected) applyDate(selected);
-        },
-      });
-      return;
-    }
-    setShowIosPicker(true);
+  function shiftMonth(delta: number) {
+    setCursor((c) => new Date(c.getFullYear(), c.getMonth() + delta, 1));
   }
 
-  function onIosChange(event: DateTimePickerEvent, selected?: Date) {
-    if (Platform.OS === 'ios') {
-      if (event.type === 'dismissed') {
-        setShowIosPicker(false);
-        return;
-      }
-      if (selected) applyDate(selected);
-    }
-  }
+  const cells = buildMonthGrid(cursor.getFullYear(), cursor.getMonth());
+  const today = startOfDay(new Date());
 
   return (
     <View style={styles.wrap}>
@@ -88,41 +121,84 @@ export function DateInput({
           <Ionicons name="chevron-down" size={16} color="#94a3b8" />
         </Pressable>
       </View>
-      {Platform.OS === 'ios' ? (
-        <Modal
-          visible={showIosPicker}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowIosPicker(false)}
-        >
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => setShowIosPicker(false)}
-          >
-            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.modalTitle}>{label}</Text>
-              <DateTimePicker
-                value={pickerDate}
-                mode="date"
-                display="spinner"
-                locale="pt-BR"
-                themeVariant="light"
-                textColor="#0f172a"
-                minimumDate={minimumDate}
-                maximumDate={maximumDate}
-                onChange={onIosChange}
-                style={styles.iosPicker}
-              />
+
+      <Modal
+        visible={open}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setOpen(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>{label}</Text>
+
+            <View style={styles.monthNav}>
               <Pressable
-                style={styles.iosDoneBtn}
-                onPress={() => setShowIosPicker(false)}
+                onPress={() => shiftMonth(-1)}
+                hitSlop={8}
+                style={styles.navBtn}
               >
-                <Text style={styles.iosDoneText}>OK</Text>
+                <Ionicons name="chevron-back" size={22} color="#1e3a8a" />
               </Pressable>
+              <Text style={styles.monthLabel}>
+                {MONTHS[cursor.getMonth()]} {cursor.getFullYear()}
+              </Text>
+              <Pressable
+                onPress={() => shiftMonth(1)}
+                hitSlop={8}
+                style={styles.navBtn}
+              >
+                <Ionicons name="chevron-forward" size={22} color="#1e3a8a" />
+              </Pressable>
+            </View>
+
+            <View style={styles.weekRow}>
+              {WEEKDAYS.map((w, i) => (
+                <Text key={`${w}-${i}`} style={styles.weekday}>
+                  {w}
+                </Text>
+              ))}
+            </View>
+
+            <View style={styles.grid}>
+              {cells.map((day, idx) => {
+                if (!day) {
+                  return <View key={`e-${idx}`} style={styles.dayCell} />;
+                }
+                const disabled = isDisabled(day, minimumDate, maximumDate);
+                const selectedDay = sameDay(day, selected);
+                const isToday = sameDay(day, today);
+                return (
+                  <Pressable
+                    key={`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`}
+                    style={[
+                      styles.dayCell,
+                      selectedDay && styles.daySelected,
+                      isToday && !selectedDay && styles.dayToday,
+                    ]}
+                    disabled={disabled}
+                    onPress={() => applyDate(day)}
+                  >
+                    <Text
+                      style={[
+                        styles.dayText,
+                        selectedDay && styles.dayTextSelected,
+                        disabled && styles.dayTextDisabled,
+                      ]}
+                    >
+                      {day.getDate()}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Pressable style={styles.doneBtn} onPress={() => setOpen(false)}>
+              <Text style={styles.doneText}>Fechar</Text>
             </Pressable>
           </Pressable>
-        </Modal>
-      ) : null}
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -178,16 +254,69 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: '#e2e8f0',
   },
-  iosPicker: {
-    width: '100%',
-    height: 216,
+  monthNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  iosDoneBtn: {
+  navBtn: { padding: 6 },
+  monthLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  weekRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    marginBottom: 4,
+  },
+  weekday: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  dayCell: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+  },
+  daySelected: {
+    backgroundColor: '#1e3a8a',
+  },
+  dayToday: {
+    borderWidth: 1,
+    borderColor: '#1e3a8a',
+  },
+  dayText: {
+    fontSize: 15,
+    color: '#0f172a',
+    fontVariant: ['tabular-nums'],
+  },
+  dayTextSelected: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  dayTextDisabled: {
+    color: '#cbd5e1',
+  },
+  doneBtn: {
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 14,
     borderTopWidth: 1,
     borderColor: '#e2e8f0',
   },
-  iosDoneText: { color: '#1e3a8a', fontWeight: '700', fontSize: 16 },
+  doneText: { color: '#1e3a8a', fontWeight: '700', fontSize: 16 },
 });
