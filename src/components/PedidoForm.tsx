@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -199,6 +200,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [cliente, setCliente] = useState<ClienteRow | null>(null);
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [obs, setObs] = useState('');
+  const [dsOrdemCompra, setDsOrdemCompra] = useState('');
 
   const [condicaoSel, setCondicaoSel] = useState<CondicaoOpt | null>(null);
   const [parcelas, setParcelas] = useState<ParcelaEditavel[]>([]);
@@ -378,6 +380,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         const payload = JSON.parse(row.payload || '{}');
         const display = payload.__display || {};
         setObs(display.observacao || payload.obs || '');
+        setDsOrdemCompra(
+          display.dsOrdemCompra || payload.dsOrdemCompra || '',
+        );
 
         // Carregar itens enriquecidos com estoque atual
         const rawItens: any[] = display.itens?.length
@@ -1288,6 +1293,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         cdFormaPagamento: CD_FORMA_PAGAMENTO_PADRAO,
         dtEmissao,
         obs: obs.trim() || undefined,
+        dsOrdemCompra: dsOrdemCompra.trim()
+          ? dsOrdemCompra.trim().slice(0, 65)
+          : undefined,
         vlBruto: vlBrutoSalvar,
         prAcrescimo,
         vlAcrescimoTotal,
@@ -1310,6 +1318,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       const displayPayload = {
         condicaoLabel: condicaoSel.descricao,
         observacao: obs.trim() || null,
+        dsOrdemCompra: dsOrdemCompra.trim()
+          ? dsOrdemCompra.trim().slice(0, 65)
+          : null,
         itens: itensNorm.map((it) => ({
           cdProduto: it.cdProduto,
           descricao: it.descricao,
@@ -1555,7 +1566,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     }
                     onEndEditing={() => validarPrecoBlur(it.cdProduto)}
                     onBlur={() => validarPrecoBlur(it.cdProduto)}
-                    selectTextOnFocus
+                    selectTextOnFocus={Platform.OS === 'ios'}
                   />
                   {precoSomenteAumenta && it.vlMinimo != null && (
                     <Text style={styles.subtle}>
@@ -1739,6 +1750,16 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           )}
         </View>
       )}
+
+      <Text style={styles.label}>Ordem de compra</Text>
+      <TextInput
+        style={styles.input}
+        value={dsOrdemCompra}
+        onChangeText={(t) => setDsOrdemCompra(t.slice(0, 65))}
+        maxLength={65}
+        placeholder="Nº ordem de compra do cliente"
+        autoCapitalize="characters"
+      />
 
       <Text style={styles.label}>Observação</Text>
       <TextInput

@@ -86,7 +86,7 @@ export default function ClientesScreen() {
       <View style={styles.searchBox}>
         <TextInput
           style={styles.input}
-          placeholder="Buscar por nome, razão ou CPF/CNPJ"
+          placeholder="Buscar por código, nome, razão ou CPF/CNPJ"
           value={search}
           onChangeText={setSearch}
           autoCapitalize="none"
@@ -138,6 +138,7 @@ export default function ClientesScreen() {
                     </View>
                   ) : null}
                 </View>
+                <Text style={styles.sub}>#{item.cd_cliente}</Text>
                 <Text style={styles.sub}>
                   {fmtCpfCnpj(item.cpf_cnpj) || '—'}
                   {tpPessoaLabel(item.tp_pessoa)

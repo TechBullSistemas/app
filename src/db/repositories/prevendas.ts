@@ -12,6 +12,7 @@ export interface PrevendaRow {
   vl_total: number | null;
   vl_bruto: number | null;
   obs: string | null;
+  ds_ordem_compra: string | null;
   nr_nota: number | null;
   serie_nota: string | null;
   id_situacao: string | null;
@@ -67,9 +68,9 @@ async function upsertPrevendaRow(
   await db.runAsync(
     `INSERT OR REPLACE INTO prevenda
      (nr_prevenda, cd_empresa, holding_id, cd_cliente, nm_cliente, cd_funcionario,
-      dt_emissao, vl_total, vl_bruto, obs, nr_nota, serie_nota, id_situacao,
+      dt_emissao, vl_total, vl_bruto, obs, ds_ordem_compra, nr_nota, serie_nota, id_situacao,
       cd_forma_pagamento, ds_forma_pagamento, client_id, id_sincronizado_duapi, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       nrPrevenda,
       cdEmpresa,
@@ -81,6 +82,7 @@ async function upsertPrevendaRow(
       num(it.vlTotal),
       num(it.vlBruto),
       it.obs ?? null,
+      it.dsOrdemCompra ?? it.ds_ordem_compra ?? null,
       it.nrNota != null ? Number(it.nrNota) : null,
       it.serieNota ?? null,
       it.idSituacao ?? 'AB',

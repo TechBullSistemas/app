@@ -60,7 +60,7 @@ export function ClientePicker({ visible, onClose, onSelect }: Props) {
           <View style={styles.searchBox}>
             <TextInput
               style={styles.input}
-              placeholder="Buscar cliente..."
+              placeholder="Buscar por código, nome ou CPF/CNPJ"
               value={search}
               onChangeText={setSearch}
               autoCapitalize="none"
@@ -80,7 +80,10 @@ export function ClientePicker({ visible, onClose, onSelect }: Props) {
                 }}
               >
                 <Text style={styles.name}>{item.nome}</Text>
-                <Text style={styles.sub}>{item.cpf_cnpj || '—'}</Text>
+                <Text style={styles.sub}>
+                  #{item.cd_cliente}
+                  {item.cpf_cnpj ? ` • ${item.cpf_cnpj}` : ''}
+                </Text>
                 <ClienteAtrasoInfo
                   resumo={atrasoMap.get(`${item.cd_cliente}-${item.holding_id}`)}
                 />

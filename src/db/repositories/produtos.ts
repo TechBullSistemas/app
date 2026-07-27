@@ -138,12 +138,12 @@ export async function listProdutos(search?: string, limit = 100): Promise<Produt
       `SELECT * FROM produto
        WHERE (descricao LIKE ? OR referencia LIKE ?)
          AND ${FILTRO_TIPO_PRODUTO}
-       ORDER BY descricao LIMIT ?`,
+       ORDER BY cd_produto ASC LIMIT ?`,
       [like, like, limit],
     );
   }
   return db.getAllAsync<ProdutoRow>(
-    `SELECT * FROM produto WHERE ${FILTRO_TIPO_PRODUTO} ORDER BY descricao LIMIT ?`,
+    `SELECT * FROM produto WHERE ${FILTRO_TIPO_PRODUTO} ORDER BY cd_produto ASC LIMIT ?`,
     [limit],
   );
 }

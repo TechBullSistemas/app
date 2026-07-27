@@ -13,6 +13,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { listOutboxVendas, OutboxVendaRow } from '@/db/repositories/outbox';
 import { listPrevendas, PrevendaRow } from '@/db/repositories/prevendas';
 import { getClienteById } from '@/db/repositories/clientes';
+import { useSessionStore } from '@/stores/session';
 
 type OutboxItem = OutboxVendaRow & {
   kind: 'outbox';
@@ -53,6 +54,9 @@ const OUTBOX_STATUS_LABEL: Record<string, string> = {
 
 export default function PedidosScreen() {
   const router = useRouter();
+  const isIntegradorDuapi = useSessionStore(
+    (s) => s.user?.idIntegradorDuapi === true,
+  );
   const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -113,7 +117,7 @@ export default function PedidosScreen() {
             </Text>
           }
           ListHeaderComponent={
-            items.length > 0 ? (
+            items.length > 0 && isIntegradorDuapi ? (
               <Text style={styles.hint}>
                 “A enviar” = app → Techbull. “Pendente/Sincronizado” = Techbull →
                 Duapi.
@@ -172,25 +176,27 @@ export default function PedidosScreen() {
                   </Text>
                   <Text style={styles.value}>{fmtMoney(item.vl_total)}</Text>
                 </View>
-                <View
-                  style={[
-                    styles.badge,
-                    item.id_sincronizado_duapi
-                      ? styles.badgeSynced
-                      : styles.badgePending,
-                  ]}
-                >
-                  <Text
+                {isIntegradorDuapi ? (
+                  <View
                     style={[
-                      styles.badgeText,
+                      styles.badge,
                       item.id_sincronizado_duapi
-                        ? styles.badgeTextSynced
-                        : styles.badgeTextPending,
+                        ? styles.badgeSynced
+                        : styles.badgePending,
                     ]}
                   >
-                    {item.id_sincronizado_duapi ? 'Sincronizado' : 'Pendente'}
-                  </Text>
-                </View>
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        item.id_sincronizado_duapi
+                          ? styles.badgeTextSynced
+                          : styles.badgeTextPending,
+                      ]}
+                    >
+                      {item.id_sincronizado_duapi ? 'Sincronizado' : 'Pendente'}
+                    </Text>
+                  </View>
+                ) : null}
               </Pressable>
             )
           }

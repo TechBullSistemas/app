@@ -151,9 +151,12 @@ export async function listClientes(search?: string, limit = 100): Promise<Client
     const like = `%${search.trim()}%`;
     return db.getAllAsync<ClienteRow>(
       `${SELECT_CLIENTE_COM_CIDADE}
-       WHERE c.nome LIKE ? OR c.razao_social LIKE ? OR c.cpf_cnpj LIKE ?
+       WHERE c.nome LIKE ?
+          OR c.razao_social LIKE ?
+          OR c.cpf_cnpj LIKE ?
+          OR CAST(c.cd_cliente AS TEXT) LIKE ?
        ORDER BY c.nome LIMIT ?`,
-      [like, like, like, limit],
+      [like, like, like, like, limit],
     );
   }
   return db.getAllAsync<ClienteRow>(

@@ -236,6 +236,7 @@ CREATE TABLE IF NOT EXISTS prevenda (
   vl_total REAL,
   vl_bruto REAL,
   obs TEXT,
+  ds_ordem_compra TEXT,
   nr_nota INTEGER,
   serie_nota TEXT,
   id_situacao TEXT,
@@ -647,6 +648,9 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
        AND raw_json IS NOT NULL
        AND json_extract(raw_json, '$.fatorVenda') IS NOT NULL;
   `);
+
+  // Pré-venda: ordem de compra do cliente (sync ERP / Duapi).
+  await ensureColumn(db, 'prevenda', 'ds_ordem_compra', 'ds_ordem_compra TEXT');
 
   // CondicaoPreco: caso especial "última venda".
   await ensureColumn(

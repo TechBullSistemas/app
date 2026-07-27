@@ -27,6 +27,7 @@ import {
   PedidoPdfData,
 } from '@/services/pdfVenda';
 import { useOnlineStore } from '@/stores/online';
+import { useSessionStore } from '@/stores/session';
 import { enviarVendaPorEmail } from '@/api/email';
 import { extractApiErrorMessage } from '@/api/client';
 
@@ -56,6 +57,9 @@ export default function PedidoRemotoDetalhe() {
     holdingId: string;
   }>();
   const isOnline = useOnlineStore((s) => s.isOnline);
+  const isIntegradorDuapi = useSessionStore(
+    (s) => s.user?.idIntegradorDuapi === true,
+  );
   const [row, setRow] = useState<PrevendaRow | null>(null);
   const [pdfData, setPdfData] = useState<PedidoPdfData | null>(null);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
@@ -225,9 +229,11 @@ export default function PedidoRemotoDetalhe() {
       <View style={styles.card}>
         <Text style={styles.title}>Pedido #{pdfData.numero}</Text>
         <Text style={styles.subtle}>{pdfData.data}</Text>
-        <Text style={[styles.subtle, { color: duapiColor, fontWeight: '700' }]}>
-          Sync Duapi: {duapiLabel}
-        </Text>
+        {isIntegradorDuapi ? (
+          <Text style={[styles.subtle, { color: duapiColor, fontWeight: '700' }]}>
+            Sync Duapi: {duapiLabel}
+          </Text>
+        ) : null}
         {row.nr_nota != null ? (
           <Text style={styles.subtle}>
             Nota: {row.nr_nota}
@@ -280,6 +286,13 @@ export default function PedidoRemotoDetalhe() {
               <Text style={styles.itemTotal}>{fmtMoney(p.valor)}</Text>
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {row.ds_ordem_compra ? (
+        <View style={styles.card}>
+          <Text style={styles.section}>Ordem de compra</Text>
+          <Text style={styles.value}>{row.ds_ordem_compra}</Text>
         </View>
       ) : null}
 

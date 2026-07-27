@@ -57,6 +57,7 @@ export default function PedidoDetalhe() {
   const isOnline = useOnlineStore((s) => s.isOnline);
   const [row, setRow] = useState<OutboxRow | null>(null);
   const [pdfData, setPdfData] = useState<PedidoPdfData | null>(null);
+  const [dsOrdemCompra, setDsOrdemCompra] = useState<string | null>(null);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [emailDest, setEmailDest] = useState('');
@@ -101,6 +102,9 @@ export default function PedidoDetalhe() {
     };
     setRow(r);
     setPdfData(data);
+    setDsOrdemCompra(
+      display.dsOrdemCompra || payload.dsOrdemCompra || null,
+    );
     setEmailDest((prev) => prev || cli?.email || '');
     setLoading(false);
   }, [clientId]);
@@ -269,6 +273,20 @@ export default function PedidoDetalhe() {
               <Text style={styles.itemTotal}>{fmtMoney(p.valor)}</Text>
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {dsOrdemCompra ? (
+        <View style={styles.card}>
+          <Text style={styles.section}>Ordem de compra</Text>
+          <Text style={styles.value}>{dsOrdemCompra}</Text>
+        </View>
+      ) : null}
+
+      {pdfData.observacao ? (
+        <View style={styles.card}>
+          <Text style={styles.section}>Observação</Text>
+          <Text style={styles.value}>{pdfData.observacao}</Text>
         </View>
       ) : null}
 
