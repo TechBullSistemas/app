@@ -91,13 +91,6 @@ export default function ClientesScreen() {
           onChangeText={setSearch}
           autoCapitalize="none"
         />
-        <Pressable
-          style={styles.newBtn}
-          onPress={() => router.push('/(app)/clientes/novo')}
-        >
-          <Ionicons name="person-add" size={18} color="#fff" />
-          <Text style={styles.newBtnText}>Novo</Text>
-        </Pressable>
       </View>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} />
@@ -178,16 +171,6 @@ const styles = StyleSheet.create({
     padding: 10,
     fontSize: 15,
   },
-  newBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#16a34a',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 4,
-  },
-  newBtnText: { color: '#fff', fontWeight: '700' },
   row: { padding: 14 },
   rowHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   chipPendente: {
