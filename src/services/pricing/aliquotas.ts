@@ -60,6 +60,9 @@ export function calcularAliquotas(params: {
   ufEmpresa: string | null;
   ufCliente: string | null;
   impostoUf: ImpostoUfEngine | null;
+  // Registro da UF da EMPRESA — fonte do ICMS da operação no modo 'M'
+  // (id_forma_preco_venda_produto). Null nas demais formas.
+  impostoUfEmpresa?: ImpostoUfEngine | null;
   prIcmsTabela: number | null;
   tpClienteVenda?: string | null;
 }): AliquotasResult {
@@ -69,6 +72,7 @@ export function calcularAliquotas(params: {
     ufEmpresa,
     ufCliente,
     impostoUf,
+    impostoUfEmpresa,
     prIcmsTabela,
     tpClienteVenda,
   } = params;
@@ -116,24 +120,45 @@ export function calcularAliquotas(params: {
     prIcmsSubstituicao = pick.valor;
   }
 
-  // Override por produto: replica `if (icms_produto > 0) usa do produto`
-  const prIcmsProduto = safeNumber(produto.prIcms);
-  if (prIcmsProduto > 0 && isInterna) {
-    prIcmsVenda = prIcmsProduto;
-  }
+  if (empresa.idFormaPrecoVendaProduto === 'M') {
+    // Modo 'M': regra própria de ICMS da operação (a ST acima permanece
+    // calculada a partir do `impostoUf` da UF do cliente):
+    //   - Dentro do estado: alíquota interna do imposto_uf da UF da EMPRESA
+    //     conforme o tipo do cliente (C/R/I), sem override por produto.
+    //   - Fora do estado: se essa alíquota interna for zero, ICMS = 0; caso
+    //     contrário usa a tabela_icms (origem × destino). Ignora o
+    //     pr_icms_externo e o parâmetro de importado da empresa.
+    const fonteM = impostoUfEmpresa ?? impostoUf;
+    const pickM = fonteM
+      ? pickIcmsInterno(fonteM, tpClienteVenda)
+      : { valor: 0, fonte: 'C' as const };
+    prIcmsInternoEscolhido = pickM.valor;
+    fonteIcmsInterno = pickM.fonte;
+    if (isInterna) {
+      prIcmsVenda = pickM.valor;
+    } else {
+      prIcmsVenda = pickM.valor > 0 ? safeNumber(prIcmsTabela) : 0;
+    }
+  } else {
+    // Override por produto: replica `if (icms_produto > 0) usa do produto`
+    const prIcmsProduto = safeNumber(produto.prIcms);
+    if (prIcmsProduto > 0 && isInterna) {
+      prIcmsVenda = prIcmsProduto;
+    }
 
-  // Importado fora estado com parâmetro fixo na empresa
-  if (
-    isImportado &&
-    !isInterna &&
-    safeNumber(empresa.prIcmsProdutoImportadoCompraVendaForaEstado) > 0
-  ) {
-    prIcmsVenda = empresa.prIcmsProdutoImportadoCompraVendaForaEstado;
-  }
+    // Importado fora estado com parâmetro fixo na empresa
+    if (
+      isImportado &&
+      !isInterna &&
+      safeNumber(empresa.prIcmsProdutoImportadoCompraVendaForaEstado) > 0
+    ) {
+      prIcmsVenda = empresa.prIcmsProdutoImportadoCompraVendaForaEstado;
+    }
 
-  // Fallback para a tabela_icms (origem × destino)
-  if (prIcmsVenda <= 0 && prIcmsTabela != null && prIcmsTabela > 0) {
-    prIcmsVenda = prIcmsTabela;
+    // Fallback para a tabela_icms (origem × destino)
+    if (prIcmsVenda <= 0 && prIcmsTabela != null && prIcmsTabela > 0) {
+      prIcmsVenda = prIcmsTabela;
+    }
   }
 
   return {

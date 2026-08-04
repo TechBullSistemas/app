@@ -126,6 +126,11 @@ export interface ContextoCalculoItem {
   condicaoPreco?: CondicaoPrecoEngine | null;
   condicaoPagtoPreco?: CondicaoPagtoPrecoEngine | null;
   impostoUf?: ImpostoUfEngine | null;
+  // Registro de imposto_uf da UF da EMPRESA. Usado apenas quando
+  // `empresa.id_forma_preco_venda_produto = 'M'`: é a fonte de PIS/COFINS e
+  // da alíquota interna que decide o ICMS da operação (o `impostoUf` acima,
+  // da UF do cliente, continua alimentando a ST).
+  impostoUfEmpresa?: ImpostoUfEngine | null;
   prIcmsTabela?: number | null; // de tabela_icms (origem×destino)
   custoVariaveis?: Record<string, number>;
   // Forma de preço 'V': último unitário praticado do produto para o cliente

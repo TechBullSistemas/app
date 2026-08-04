@@ -125,6 +125,14 @@ export async function calcularPrecoUnitario(
   const hoje = contexto.hoje ?? new Date();
   const avisos: string[] = [];
 
+  // Registro de imposto_uf usado no diagnóstico das alíquotas internas do
+  // trace. No modo 'M' o motor decide o ICMS pelo registro da UF da EMPRESA;
+  // nas demais formas, pelo da UF do cliente.
+  const impostoUfDiag =
+    empresa.idFormaPrecoVendaProduto === 'M'
+      ? contexto.impostoUfEmpresa ?? contexto.impostoUf
+      : contexto.impostoUf;
+
   // Passo 7 — short-circuit: condição de preço marcada como "última venda".
   const cp = contexto.condicaoPreco;
   if (cp?.idUltimaVenda && safeNumber(cp.vlValor) > 0) {
@@ -173,10 +181,9 @@ export async function calcularPrecoUnitario(
         impostoUfEncontrado: !!contexto.impostoUf,
         prIcmsTabelaIcms: contexto.prIcmsTabela ?? null,
         tpClienteVenda: contexto.cliente?.tpClienteVenda ?? null,
-        prIcmsInternoConsumo: contexto.impostoUf?.prIcmsInterno ?? null,
-        prIcmsInternoRevenda: contexto.impostoUf?.prIcmsInternoRevenda ?? null,
-        prIcmsInternoIndustria:
-          contexto.impostoUf?.prIcmsInternoIndustria ?? null,
+        prIcmsInternoConsumo: impostoUfDiag?.prIcmsInterno ?? null,
+        prIcmsInternoRevenda: impostoUfDiag?.prIcmsInternoRevenda ?? null,
+        prIcmsInternoIndustria: impostoUfDiag?.prIcmsInternoIndustria ?? null,
         prIcmsInternoEscolhido: contexto.prIcmsInternoEscolhido ?? null,
         fonteIcmsInterno: contexto.fonteIcmsInterno ?? null,
       },
@@ -235,10 +242,9 @@ export async function calcularPrecoUnitario(
         impostoUfEncontrado: !!contexto.impostoUf,
         prIcmsTabelaIcms: contexto.prIcmsTabela ?? null,
         tpClienteVenda: contexto.cliente?.tpClienteVenda ?? null,
-        prIcmsInternoConsumo: contexto.impostoUf?.prIcmsInterno ?? null,
-        prIcmsInternoRevenda: contexto.impostoUf?.prIcmsInternoRevenda ?? null,
-        prIcmsInternoIndustria:
-          contexto.impostoUf?.prIcmsInternoIndustria ?? null,
+        prIcmsInternoConsumo: impostoUfDiag?.prIcmsInterno ?? null,
+        prIcmsInternoRevenda: impostoUfDiag?.prIcmsInternoRevenda ?? null,
+        prIcmsInternoIndustria: impostoUfDiag?.prIcmsInternoIndustria ?? null,
         prIcmsInternoEscolhido: contexto.prIcmsInternoEscolhido ?? null,
         fonteIcmsInterno: contexto.fonteIcmsInterno ?? null,
       },
@@ -341,11 +347,18 @@ export async function calcularPrecoUnitario(
   let formulaVarsTrace: Record<string, number> | null = null;
   let formulaErro: string | null = null;
 
+  const formaPreco = empresa.idFormaPrecoVendaProduto ?? 'T';
+
   // Resolve PIS/COFINS/ICMS de saída ANTES da fórmula (e fora do `if (formula)`)
   // para que o trace reflita o que o motor usaria, mesmo sem fórmula.
+  //
+  // Modo 'M': PIS/COFINS vêm SEMPRE do imposto_uf (da UF da empresa, resolvido
+  // pelo orquestrador em `prPisSaidaFallback`/`prCofinsSaidaFallback`),
+  // ignorando o override por linha do `tabela_preco_item`. Nas demais formas,
+  // o override do `tabela_preco_item` tem preferência.
   let prPisSaidaTrace = 0;
   let prPisSaidaOrigem: PrecoTrace['prPisSaidaOrigem'] = 'zero';
-  if (safeNumber(precoTabela?.prPisSaida) > 0) {
+  if (formaPreco !== 'M' && safeNumber(precoTabela?.prPisSaida) > 0) {
     prPisSaidaTrace = safeNumber(precoTabela?.prPisSaida);
     prPisSaidaOrigem = 'tabela_preco_item';
   } else if (safeNumber(contexto.prPisSaidaFallback) > 0) {
@@ -355,7 +368,7 @@ export async function calcularPrecoUnitario(
 
   let prCofinsSaidaTrace = 0;
   let prCofinsSaidaOrigem: PrecoTrace['prCofinsSaidaOrigem'] = 'zero';
-  if (safeNumber(precoTabela?.prCofinsSaida) > 0) {
+  if (formaPreco !== 'M' && safeNumber(precoTabela?.prCofinsSaida) > 0) {
     prCofinsSaidaTrace = safeNumber(precoTabela?.prCofinsSaida);
     prCofinsSaidaOrigem = 'tabela_preco_item';
   } else if (safeNumber(contexto.prCofinsSaidaFallback) > 0) {
@@ -382,7 +395,6 @@ export async function calcularPrecoUnitario(
   //   - 'V'/'N'/sem condição → `v_pr_margem_lucro = tabela_preco_item.pr_margem_lucro`
   //            (margem cadastrada no preço×tabela). O acréscimo direto do tipo
   //            'V' já foi aplicado no Passo 3.
-  const formaPreco = empresa.idFormaPrecoVendaProduto ?? 'T';
   const formulaGateAtende =
     formaPreco === 'M' && !!empresa.dsFuncaoCalculoPrecoVenda;
   let formulaGateMotivo: string | null = null;
@@ -511,10 +523,9 @@ export async function calcularPrecoUnitario(
       impostoUfEncontrado: !!contexto.impostoUf,
       prIcmsTabelaIcms: contexto.prIcmsTabela ?? null,
       tpClienteVenda: contexto.cliente?.tpClienteVenda ?? null,
-      prIcmsInternoConsumo: contexto.impostoUf?.prIcmsInterno ?? null,
-      prIcmsInternoRevenda: contexto.impostoUf?.prIcmsInternoRevenda ?? null,
-      prIcmsInternoIndustria:
-        contexto.impostoUf?.prIcmsInternoIndustria ?? null,
+      prIcmsInternoConsumo: impostoUfDiag?.prIcmsInterno ?? null,
+      prIcmsInternoRevenda: impostoUfDiag?.prIcmsInternoRevenda ?? null,
+      prIcmsInternoIndustria: impostoUfDiag?.prIcmsInternoIndustria ?? null,
       prIcmsInternoEscolhido: contexto.prIcmsInternoEscolhido ?? null,
       fonteIcmsInterno: contexto.fonteIcmsInterno ?? null,
     },

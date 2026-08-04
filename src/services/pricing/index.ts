@@ -7,6 +7,7 @@
 
 import type {
   ContextoCalculoItem,
+  ImpostoUfEngine,
   ItemPedidoEngine,
   ProdutoEngine,
   ResultadoCalculoItem,
@@ -27,6 +28,31 @@ import { findCondicaoPagto } from '@/db/repositories/condicaoPagto';
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { listCustoVariavel } from '@/db/repositories/parametros';
 import { getUltimaVendaProdutoCliente } from '@/db/repositories/notas';
+
+function mapImpostoUfRow(r: any): ImpostoUfEngine {
+  return {
+    cdImposto: r.cd_imposto,
+    cdEstado: r.cd_estado,
+    prIcmsInterno: Number(r.pr_icms_interno),
+    prIcmsInternoRevenda: Number(r.pr_icms_interno_revenda ?? 0),
+    prIcmsInternoIndustria: Number(r.pr_icms_interno_industria ?? 0),
+    prIcmsExterno: Number(r.pr_icms_externo),
+    prBaseSubstituicaoInterno: Number(r.pr_base_substituicao_interno),
+    prBaseSubstituicaoExterno: Number(r.pr_base_substituicao_externo),
+    prReducaoBaseSubstituicaoInterno: Number(
+      r.pr_reducao_base_substituicao_interno,
+    ),
+    prReducaoBaseSubstituicaoExterno: Number(
+      r.pr_reducao_base_substituicao_externo,
+    ),
+    prReducaoIcmsInterno: Number(r.pr_reducao_icms_interno),
+    prReducaoIcmsExterno: Number(r.pr_reducao_icms_externo),
+    prPis: Number(r.pr_pis),
+    prCofins: Number(r.pr_cofins),
+    prFcp: Number(r.pr_fcp),
+    prFcpSt: Number(r.pr_fcp_st),
+  };
+}
 
 export interface CalcularItemInput {
   produto: ProdutoEngine;
@@ -101,28 +127,31 @@ export async function calcularItem(
       ? await findImpostoUf(produto.cdImposto, ufLookup, holdingId)
       : null;
     if (r) {
-      contexto.impostoUf = {
-        cdImposto: r.cd_imposto,
-        cdEstado: r.cd_estado,
-        prIcmsInterno: Number(r.pr_icms_interno),
-        prIcmsInternoRevenda: Number(r.pr_icms_interno_revenda ?? 0),
-        prIcmsInternoIndustria: Number(r.pr_icms_interno_industria ?? 0),
-        prIcmsExterno: Number(r.pr_icms_externo),
-        prBaseSubstituicaoInterno: Number(r.pr_base_substituicao_interno),
-        prBaseSubstituicaoExterno: Number(r.pr_base_substituicao_externo),
-        prReducaoBaseSubstituicaoInterno: Number(
-          r.pr_reducao_base_substituicao_interno,
-        ),
-        prReducaoBaseSubstituicaoExterno: Number(
-          r.pr_reducao_base_substituicao_externo,
-        ),
-        prReducaoIcmsInterno: Number(r.pr_reducao_icms_interno),
-        prReducaoIcmsExterno: Number(r.pr_reducao_icms_externo),
-        prPis: Number(r.pr_pis),
-        prCofins: Number(r.pr_cofins),
-        prFcp: Number(r.pr_fcp),
-        prFcpSt: Number(r.pr_fcp_st),
-      };
+      contexto.impostoUf = mapImpostoUfRow(r);
+    }
+  }
+
+  // Modo 'M' (id_forma_preco_venda_produto): PIS/COFINS e a regra de ICMS da
+  // operação leem o imposto_uf da UF da EMPRESA ("dentro do estado" =
+  // operação interna da empresa). Reaproveita o registro já carregado quando
+  // as UFs coincidem.
+  if (
+    !contexto.impostoUfEmpresa &&
+    empresa.idFormaPrecoVendaProduto === 'M' &&
+    produto.cdImposto &&
+    contexto.ufEmpresa
+  ) {
+    if (contexto.impostoUf?.cdEstado === contexto.ufEmpresa) {
+      contexto.impostoUfEmpresa = contexto.impostoUf;
+    } else {
+      const r = await findImpostoUf(
+        produto.cdImposto,
+        contexto.ufEmpresa,
+        holdingId,
+      );
+      if (r) {
+        contexto.impostoUfEmpresa = mapImpostoUfRow(r);
+      }
     }
   }
 
@@ -241,12 +270,18 @@ export async function calcularItem(
     ufEmpresa: contexto.ufEmpresa,
     ufCliente: contexto.ufCliente,
     impostoUf: contexto.impostoUf ?? null,
+    impostoUfEmpresa: contexto.impostoUfEmpresa ?? null,
     prIcmsTabela,
     tpClienteVenda: contexto.cliente?.tpClienteVenda ?? 'C',
   });
   contexto.prIcmsSaida = aliquotas.prIcmsVenda;
-  contexto.prPisSaidaFallback = contexto.impostoUf?.prPis ?? null;
-  contexto.prCofinsSaidaFallback = contexto.impostoUf?.prCofins ?? null;
+  // Modo 'M': PIS/COFINS vêm do imposto_uf da UF da empresa (fallback para o
+  // registro da UF do cliente quando a empresa não tem linha cadastrada).
+  const impostoUfPisCofins = empresa.idFormaPrecoVendaProduto === 'M'
+    ? contexto.impostoUfEmpresa ?? contexto.impostoUf
+    : contexto.impostoUf;
+  contexto.prPisSaidaFallback = impostoUfPisCofins?.prPis ?? null;
+  contexto.prCofinsSaidaFallback = impostoUfPisCofins?.prCofins ?? null;
   contexto.prIcmsInternoEscolhido = aliquotas.prIcmsInternoEscolhido;
   contexto.fonteIcmsInterno = aliquotas.fonteIcmsInterno;
 
