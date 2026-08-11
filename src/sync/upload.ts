@@ -35,8 +35,19 @@ export interface UploadSyncResult {
   sessionExpired?: boolean;
 }
 
-export async function runUploadSync(): Promise<UploadSyncResult> {
+export interface UploadSyncOptions {
+  /**
+   * client_ids de vendas que o usuário desmarcou na tela de envio.
+   * Essas vendas não são enviadas e permanecem pendentes no outbox.
+   */
+  skipVendaClientIds?: string[];
+}
+
+export async function runUploadSync(
+  options?: UploadSyncOptions,
+): Promise<UploadSyncResult> {
   const store = useSyncStore.getState();
+  const skipVendas = new Set(options?.skipVendaClientIds ?? []);
 
   if (useSessionStore.getState().isSessionExpired()) {
     const msg = 'Sessão expirada. Faça login novamente.';
@@ -96,7 +107,7 @@ export async function runUploadSync(): Promise<UploadSyncResult> {
     ]);
 
     clientesCount = clientes.length;
-    vendasCount = vendas.length;
+    vendasCount = vendas.filter((v) => !skipVendas.has(v.client_id)).length;
     visitasCount = visitas.length;
 
     const items: UploadItemProgress[] = [
@@ -177,7 +188,11 @@ export async function runUploadSync(): Promise<UploadSyncResult> {
       }
     }
 
-    const vendasParaEnviar = await listPendingVendas();
+    // Vendas desmarcadas pelo usuário ficam de fora do envio e permanecem
+    // pendentes no outbox (aparecem na lista com status 'pending').
+    const vendasParaEnviar = (await listPendingVendas()).filter(
+      (v) => !skipVendas.has(v.client_id),
+    );
     const visitasParaEnviar = await listPendingVisitas();
     vendasCount = vendasParaEnviar.length;
     visitasCount = visitasParaEnviar.length;

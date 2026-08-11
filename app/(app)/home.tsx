@@ -10,10 +10,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { OnlineBadge } from '@/components/OnlineBadge';
 import { useSessionStore } from '@/stores/session';
+import { useOnlineStore } from '@/stores/online';
 import { logoutRequest } from '@/api/auth';
+import { listMetas } from '@/api/meta';
 import { countPending } from '@/db/repositories/outbox';
 import { getAppVersion, getVersionLabel } from '@/config/version';
 import { checkAndApplyUpdate, isUpdatesEnabled } from '@/services/updates';
@@ -26,6 +29,9 @@ interface MenuItem {
   badge?: number;
 }
 
+// Cache do último resultado da consulta de metas (para uso offline).
+const HAS_METAS_KEY = 'techbull.hasMetas';
+
 export default function HomeScreen() {
   const router = useRouter();
   const user = useSessionStore((s) => s.user);
@@ -35,6 +41,9 @@ export default function HomeScreen() {
   const layout = getResponsiveLayout(windowWidth);
 
   const [pending, setPending] = useState({ vendas: 0, visitas: 0, clientes: 0 });
+  // Só exibe o atalho "Meta" se o vendedor tiver meta cadastrada. O último
+  // resultado fica em cache para o atalho continuar correto offline.
+  const [hasMetas, setHasMetas] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const versionInfo = getAppVersion();
   const versionLabel = getVersionLabel();
@@ -52,6 +61,31 @@ export default function HomeScreen() {
         alive = false;
       };
     }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      AsyncStorage.getItem(HAS_METAS_KEY)
+        .then((v) => {
+          if (alive && v != null) setHasMetas(v === '1');
+        })
+        .catch(() => undefined);
+      if (useOnlineStore.getState().isOnline) {
+        listMetas(user?.cdEmpresa)
+          .then((metas) => {
+            const has = metas.length > 0;
+            if (alive) setHasMetas(has);
+            AsyncStorage.setItem(HAS_METAS_KEY, has ? '1' : '0').catch(
+              () => undefined,
+            );
+          })
+          .catch(() => undefined);
+      }
+      return () => {
+        alive = false;
+      };
+    }, [user?.cdEmpresa]),
   );
 
   async function handleCheckUpdate() {
@@ -101,7 +135,16 @@ export default function HomeScreen() {
     { label: 'Produtos', icon: 'cube', href: '/(app)/produtos', color: '#f59e0b' },
     { label: 'Pedidos', icon: 'receipt', href: '/(app)/pedidos', color: '#8b5cf6' },
     { label: 'Notas', icon: 'document-text', href: '/(app)/vendas', color: '#6366f1' },
-    { label: 'Meta', icon: 'speedometer', href: '/(app)/meta', color: '#ec4899' },
+    ...(hasMetas
+      ? [
+          {
+            label: 'Meta',
+            icon: 'speedometer',
+            href: '/(app)/meta',
+            color: '#ec4899',
+          } as MenuItem,
+        ]
+      : []),
     { label: 'Buscar Info.', icon: 'cloud-download', href: '/(app)/sync/buscar', color: '#14b8a6' },
     {
       label: 'Enviar Info.',

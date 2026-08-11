@@ -24,7 +24,6 @@ import {
   CondicaoOpt,
 } from '@/components/CondicaoPagtoPicker';
 import { CondicaoPrecoPicker } from '@/components/CondicaoPrecoPicker';
-import { PrecoDetalheModal } from '@/components/PrecoDetalheModal';
 import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
 import { ProdutoRow, getProdutoById } from '@/db/repositories/produtos';
@@ -182,8 +181,6 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   // Picker de condição de preço aberto para um produto específico (cdProduto).
   const [condPrecoOpenFor, setCondPrecoOpenFor] = useState<number | null>(null);
-  // Modal de detalhes do preço aberto para um produto específico (cdProduto).
-  const [precoDetalheFor, setPrecoDetalheFor] = useState<number | null>(null);
   // Foto expandida do item da venda (cdProduto), aberta pela miniatura.
   const [fotoExpandidaFor, setFotoExpandidaFor] = useState<number | null>(null);
   // Cache das condições de preço calculadas. Chave composta:
@@ -1608,13 +1605,6 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             </View>
             <View style={styles.itemActions}>
               <Pressable
-                onPress={() => setPrecoDetalheFor(it.cdProduto)}
-                style={styles.infoBtn}
-                hitSlop={10}
-              >
-                <Ionicons name="information-circle-outline" size={20} color="#1e3a8a" />
-              </Pressable>
-              <Pressable
                 onPress={() => removerItem(it.cdProduto)}
                 style={styles.removeBtn}
                 hitSlop={10}
@@ -1896,24 +1886,6 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           />
         );
       })()}
-      {precoDetalheFor != null && (() => {
-        const it = itens.find((i) => i.cdProduto === precoDetalheFor);
-        if (!it) return null;
-        return (
-          <PrecoDetalheModal
-            visible
-            onClose={() => setPrecoDetalheFor(null)}
-            produto={{ cdProduto: it.cdProduto, descricao: it.descricao }}
-            qt={it.qt}
-            vlUnitarioAtual={it.vlUnitario}
-            vlUnitarioOriginal={it.vlUnitarioOriginal}
-            pricing={it.pricing}
-            cdTabelaPreco={cdTabelaPrecoResolvida}
-            tabelaPrecoDesc={tabelaPrecoDesc}
-            vlMinimo={it.vlMinimo}
-          />
-        );
-      })()}
       <CondicaoPrecoPicker
         visible={condPrecoOpenFor != null}
         options={(() => {
@@ -2092,7 +2064,6 @@ const styles = StyleSheet.create({
   },
   itemTotal: { color: '#16a34a', fontWeight: '700' },
   removeBtn: { padding: 6 },
-  infoBtn: { padding: 6 },
   itemActions: { gap: 4, alignItems: 'center' },
   qtdBox: {
     flexDirection: 'row',

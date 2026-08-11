@@ -27,6 +27,8 @@ export default function EnviarInformacoesScreen() {
   const { uploadRunning, uploadItems, uploadError, uploadFinishedAt } =
     useSyncStore();
   const [pending, setPending] = useState<UploadItemProgress[]>([]);
+  // client_ids de pedidos que o usuário desmarcou (não enviar agora).
+  const [desmarcados, setDesmarcados] = useState<Set<string>>(new Set());
 
   async function refresh() {
     const [cs, vs, vis] = await Promise.all([
@@ -66,6 +68,24 @@ export default function EnviarInformacoesScreen() {
       })),
     ];
     setPending(items);
+    // Remove da seleção pedidos que não existem mais no outbox (já enviados).
+    setDesmarcados((prev) => {
+      const next = new Set(
+        [...prev].filter((id) =>
+          items.some((it) => it.clientId === id && it.kind === 'venda'),
+        ),
+      );
+      return next.size === prev.size ? prev : next;
+    });
+  }
+
+  function toggleSelecao(clientId: string) {
+    setDesmarcados((prev) => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -84,8 +104,11 @@ export default function EnviarInformacoesScreen() {
       );
       return;
     }
+    const pulados = desmarcados.size;
     try {
-      const r = await runUploadSync();
+      const r = await runUploadSync({
+        skipVendaClientIds: [...desmarcados],
+      });
       const err = useSyncStore.getState().uploadError;
 
       if (r.sessionExpired || isSessionExpiredMessage(err)) {
@@ -98,7 +121,10 @@ export default function EnviarInformacoesScreen() {
       } else {
         Alert.alert(
           'Envio concluído',
-          `Clientes: ${r.clientes} • Vendas: ${r.vendas} • Visitas: ${r.visitas}`,
+          `Clientes: ${r.clientes} • Vendas: ${r.vendas} • Visitas: ${r.visitas}` +
+            (pulados > 0
+              ? `\n${pulados} pedido(s) desmarcado(s) continua(m) pendente(s).`
+              : ''),
         );
       }
     } catch (err) {
@@ -127,6 +153,8 @@ export default function EnviarInformacoesScreen() {
         <Text style={styles.title}>Enviar informações</Text>
         <Text style={styles.subtle}>
           Vendas e visitas registradas offline serão enviadas para o servidor.
+          Desmarque os pedidos que não deseja enviar agora; eles continuam
+          pendentes.
         </Text>
         <Pressable
           style={[styles.button, (uploadRunning || !isOnline) && { opacity: 0.6 }]}
@@ -153,16 +181,45 @@ export default function EnviarInformacoesScreen() {
         ListEmptyComponent={
           <Text style={styles.empty}>Nada pendente para enviar.</Text>
         }
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>{item.label}</Text>
-              <Text style={styles.rowSub}>{kindLabel(item.kind)}</Text>
-              {item.message ? <Text style={styles.error}>{item.message}</Text> : null}
-            </View>
-            <StatusIcon status={item.status} />
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const selecionavel =
+            item.kind === 'venda' &&
+            (item.status === 'pending' || item.status === 'error');
+          const marcado = !desmarcados.has(item.clientId);
+          return (
+            <Pressable
+              style={[
+                styles.row,
+                selecionavel && !marcado && styles.rowDesmarcado,
+              ]}
+              onPress={
+                selecionavel && !uploadRunning
+                  ? () => toggleSelecao(item.clientId)
+                  : undefined
+              }
+              disabled={!selecionavel || uploadRunning}
+            >
+              {selecionavel ? (
+                <Ionicons
+                  name={marcado ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={marcado ? '#f97316' : '#94a3b8'}
+                />
+              ) : null}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>{item.label}</Text>
+                <Text style={styles.rowSub}>{kindLabel(item.kind)}</Text>
+                {selecionavel && !marcado ? (
+                  <Text style={styles.naoEnviar}>Não será enviado agora</Text>
+                ) : null}
+                {item.message ? (
+                  <Text style={styles.error}>{item.message}</Text>
+                ) : null}
+              </View>
+              <StatusIcon status={item.status} />
+            </Pressable>
+          );
+        }}
       />
     </View>
   );
@@ -201,6 +258,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  rowDesmarcado: { opacity: 0.55 },
+  naoEnviar: { color: '#b45309', fontSize: 12, marginTop: 2, fontWeight: '600' },
   rowLabel: { color: '#0f172a', fontWeight: '600' },
   rowSub: { color: '#64748b', fontSize: 12, marginTop: 2 },
   error: { color: '#dc2626', fontSize: 12, marginTop: 4 },
