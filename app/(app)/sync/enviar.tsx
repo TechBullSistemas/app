@@ -20,6 +20,7 @@ import {
   listOutboxVendas,
   listOutboxVisitas,
 } from '@/db/repositories/outbox';
+import { getClienteById } from '@/db/repositories/clientes';
 
 export default function EnviarInformacoesScreen() {
   const isOnline = useOnlineStore((s) => s.isOnline);
@@ -44,6 +45,24 @@ export default function EnviarInformacoesScreen() {
         : s === 'error'
         ? 'error'
         : 'pending';
+    const clienteNome = async (cdCliente: number, holdingId: number) => {
+      const cliente = await getClienteById(cdCliente, holdingId);
+      return cliente?.nome ?? `Cliente ${cdCliente}`;
+    };
+    const [vendasComNome, visitasComNome] = await Promise.all([
+      Promise.all(
+        vs.map(async (v) => ({
+          ...v,
+          clienteNome: await clienteNome(v.cd_cliente, v.holding_id),
+        })),
+      ),
+      Promise.all(
+        vis.map(async (v) => ({
+          ...v,
+          clienteNome: await clienteNome(v.cd_cliente, v.holding_id),
+        })),
+      ),
+    ]);
     const items: UploadItemProgress[] = [
       ...cs.map<UploadItemProgress>((c) => ({
         clientId: c.client_id,
@@ -52,17 +71,17 @@ export default function EnviarInformacoesScreen() {
         status: norm(c.status),
         message: c.last_error,
       })),
-      ...vs.map<UploadItemProgress>((v) => ({
+      ...vendasComNome.map<UploadItemProgress>((v) => ({
         clientId: v.client_id,
         kind: 'venda',
-        label: `Venda • Cliente ${v.cd_cliente}`,
+        label: `Pedido • ${v.clienteNome}`,
         status: norm(v.status),
         message: v.last_error,
       })),
-      ...vis.map<UploadItemProgress>((v) => ({
+      ...visitasComNome.map<UploadItemProgress>((v) => ({
         clientId: v.client_id,
         kind: 'visita',
-        label: `Visita • Cliente ${v.cd_cliente}`,
+        label: `Visita • ${v.clienteNome}`,
         status: norm(v.status),
         message: v.last_error,
       })),

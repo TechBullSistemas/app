@@ -29,16 +29,6 @@ function getFatorVenda(item: ProdutoRow): number {
   }
 }
 
-function getRawNum(item: ProdutoRow, field: string): number | null {
-  try {
-    const raw = item.raw_json ? JSON.parse(item.raw_json) : {};
-    const n = Number(raw[field]);
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
-}
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.card}>
@@ -88,10 +78,6 @@ export default function ProdutoDetalhe() {
 
   const photo = item.foto_local || item.foto_url || null;
   const fatorVenda = getFatorVenda(item);
-  const prComissao = getRawNum(item, 'prComissao');
-  const prIpi = getRawNum(item, 'prIpi');
-  const margemPrincipal = tabelas[0]?.pr_margem_lucro;
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
       {photo ? (
@@ -194,28 +180,6 @@ export default function ProdutoDetalhe() {
         )}
       </Section>
 
-      {prComissao != null && prComissao > 0 ? (
-        <Section title="Dados comerciais">
-          <Linha label="Comissão (%)" value={String(prComissao)} />
-          {margemPrincipal != null && margemPrincipal > 0 ? (
-            <Linha label="Margem lucro (tabela)" value={String(margemPrincipal)} />
-          ) : null}
-          {prIpi != null && prIpi > 0 ? (
-            <Linha label="IPI (%)" value={String(prIpi)} />
-          ) : null}
-        </Section>
-      ) : margemPrincipal != null && margemPrincipal > 0 ? (
-        <Section title="Dados comerciais">
-          <Linha label="Margem lucro (tabela)" value={String(margemPrincipal)} />
-          {prIpi != null && prIpi > 0 ? (
-            <Linha label="IPI (%)" value={String(prIpi)} />
-          ) : null}
-        </Section>
-      ) : prIpi != null && prIpi > 0 ? (
-        <Section title="Dados comerciais">
-          <Linha label="IPI (%)" value={String(prIpi)} />
-        </Section>
-      ) : null}
     </ScrollView>
   );
 }

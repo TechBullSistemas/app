@@ -1522,7 +1522,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                       }
                       onEndEditing={() => finalizarQtdBlur(it.cdProduto)}
                       onBlur={() => finalizarQtdBlur(it.cdProduto)}
-                      selectTextOnFocus
+                      selectTextOnFocus={Platform.OS === 'ios'}
                     />
                     <Pressable
                       style={styles.qtdBtn}

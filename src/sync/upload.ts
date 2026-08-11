@@ -22,6 +22,7 @@ import {
   markClienteSincronizado,
   reconcileClientesPendentes,
   ensureClienteOutbox,
+  getClienteById,
 } from '@/db/repositories/clientes';
 import { deleteVisitaLocal } from '@/db/repositories/visitas';
 import { upsertPrevendaFromUpload } from '@/db/repositories/prevendas';
@@ -110,6 +111,24 @@ export async function runUploadSync(
     vendasCount = vendas.filter((v) => !skipVendas.has(v.client_id)).length;
     visitasCount = visitas.length;
 
+    const clienteNome = async (cdCliente: number, holdingId: number) => {
+      const cliente = await getClienteById(cdCliente, holdingId);
+      return cliente?.nome ?? `Cliente ${cdCliente}`;
+    };
+    const [vendasComNome, visitasComNome] = await Promise.all([
+      Promise.all(
+        vendas.map(async (v) => ({
+          ...v,
+          clienteNome: await clienteNome(v.cd_cliente, v.holding_id),
+        })),
+      ),
+      Promise.all(
+        visitas.map(async (v) => ({
+          ...v,
+          clienteNome: await clienteNome(v.cd_cliente, v.holding_id),
+        })),
+      ),
+    ]);
     const items: UploadItemProgress[] = [
       ...clientes.map<UploadItemProgress>((c) => ({
         clientId: c.client_id,
@@ -117,16 +136,16 @@ export async function runUploadSync(
         label: `Cliente novo • ${c.cd_cliente_local}`,
         status: 'pending',
       })),
-      ...vendas.map<UploadItemProgress>((v) => ({
+      ...vendasComNome.map<UploadItemProgress>((v) => ({
         clientId: v.client_id,
         kind: 'venda',
-        label: `Venda • Cliente ${v.cd_cliente}`,
+        label: `Pedido • ${v.clienteNome}`,
         status: 'pending',
       })),
-      ...visitas.map<UploadItemProgress>((v) => ({
+      ...visitasComNome.map<UploadItemProgress>((v) => ({
         clientId: v.client_id,
         kind: 'visita',
-        label: `Visita • Cliente ${v.cd_cliente}`,
+        label: `Visita • ${v.clienteNome}`,
         status: 'pending',
       })),
     ];
