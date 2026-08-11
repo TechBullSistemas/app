@@ -59,8 +59,12 @@ async function syncEntity(
       if (downloaded === 0) {
         params.withTotal = 1;
       }
-      // Produto precisa do cdEmpresa para filtrar saldoEstoque corretamente.
-      if (cdEmpresa && entity.key === 'produto') {
+      // Produto usa a empresa para filtrar o saldo e promoções são cadastradas
+      // por empresa no DUAPI.
+      if (
+        cdEmpresa &&
+        (entity.key === 'produto' || entity.key === 'tabela-preco-promocao')
+      ) {
         params.cdEmpresa = cdEmpresa;
       }
 

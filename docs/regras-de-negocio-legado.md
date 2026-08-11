@@ -397,6 +397,7 @@ Esta seção documenta como cada regra do app legado foi portada para o TechBull
 | `Imposto_Uf` | `ImpostoUf` (novo) | `imposto_uf` (nova) |
 | `Tabela_Icms` | `TabelaIcms` (+ `idStDiferencaIcms`) | `tabela_icms` (nova) |
 | `Tabela_Preco` / `Tabela_Preco_Item` | `TabelaPreco` / `TabelaPrecoItem` | `tabela_preco` / `tabela_preco_item` (nova) |
+| `Tabela_Preco_Promocao` | `TabelaPrecoPromocao` | `tabela_preco_promocao` |
 | `Produto_Desconto` | `ProdutoDesconto` (novo) | `produto_desconto` (nova) |
 | `Condicao_Pagto_Preco` | `CondicaoPagtoPreco` (novo) | `condicao_pagto_preco` (nova) |
 | `Representante` | `Representante` (+ flex/margem) | `representante` (nova) |
@@ -461,7 +462,7 @@ Todos com `@default` que reproduzem o comportamento atual quando ausentes — em
 
 ### 9.5 Endpoints novos / ajustados
 
-**Novos `/api/mobile/sync/*`:** `imposto`, `imposto-uf`, `tabela-icms`, `tabela-preco-item` (paginado), `produto-desconto` (paginado por cursor composto `cdProduto|nrItem`), `condicao-pagto-preco`, `representante`, `produto-custo-variavel`.
+**Novos `/api/mobile/sync/*`:** `imposto`, `imposto-uf`, `tabela-icms`, `tabela-preco-item` (paginado), `tabela-preco-promocao` (paginado e filtrado por empresa), `produto-desconto` (paginado por cursor composto `cdProduto|nrItem`), `condicao-pagto-preco`, `representante`, `produto-custo-variavel`.
 
 **Estendidos:**
 
@@ -477,6 +478,6 @@ Todos com `@default` que reproduzem o comportamento atual quando ausentes — em
 - Todas as colunas novas têm `@default` que reproduz o comportamento atual — empresas existentes continuam exibindo o pedido sem IPI/ST destacados, sem Flex, sem fórmula dinâmica.
 - O app legado continua válido: ele simplesmente não envia campos novos no `upload/venda` e o ERP usa os defaults.
 - A tabela `tabela-preco-item` é paginada por cursor composto para evitar payloads gigantes.
+- Quando a condição tem `idPromocao`, o app busca a promoção vigente por empresa + produto + tabela de preço, prioriza o representante e usa a promoção geral como fallback. Sem registro, mantém o preço anterior.
 - A engine de fórmula nunca aceita expressões fora da whitelist (`+ - * / min max if`); membros, atribuições e chamadas a globals são desativados na configuração do `Parser`.
 - O cálculo offline é apenas indicativo. A NF emitida pelo ERP recalcula todos os impostos a partir do cadastro atual — a fonte única da verdade fiscal continua sendo o ERP.
-

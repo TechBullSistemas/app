@@ -4,13 +4,21 @@ export interface CondicaoPrecoRow {
   cd_condicao_preco: number;
   holding_id: number;
   descricao: string | null;
-  id_promocao: string | null;
+  id_promocao: boolean | number | string | null;
   pr_acrescimo: number | null;
   pr_acrescimo_comissao: number | null;
   id_tipo_acrescimo: string | null;
   id_ultima_venda: number | null;
   vl_valor: number | null;
   raw_json: string | null;
+}
+
+export function isCondicaoPrecoPromocao(
+  value: CondicaoPrecoRow['id_promocao'],
+): boolean {
+  if (value === true || value === 1) return true;
+  const normalized = String(value ?? '').trim().toUpperCase();
+  return normalized === 'S' || normalized === 'TRUE' || normalized === '1';
 }
 
 export async function listCondicoesPreco(

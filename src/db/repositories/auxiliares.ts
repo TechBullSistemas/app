@@ -307,6 +307,7 @@ export async function bulkInsertGeneric(
         if (c.to === 'holding_id' && (v == null) && map.needsHolding) {
           v = holdingIdFallback ?? null;
         }
+        if (typeof v === 'boolean') return v ? 1 : 0;
         if (v instanceof Date) return v.toISOString();
         return v ?? null;
       });

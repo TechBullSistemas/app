@@ -377,6 +377,29 @@ CREATE TABLE IF NOT EXISTS tabela_preco_item (
 );
 CREATE INDEX IF NOT EXISTS idx_tpi_produto ON tabela_preco_item(cd_produto, holding_id);
 
+CREATE TABLE IF NOT EXISTS tabela_preco_promocao (
+  cd_empresa INTEGER NOT NULL,
+  cd_produto INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  vl_promocao REAL NOT NULL,
+  pr_comissao REAL NOT NULL,
+  dt_ult_alteracao TEXT NOT NULL,
+  cd_representante INTEGER,
+  nr_item INTEGER NOT NULL,
+  dt_inicio TEXT NOT NULL,
+  dt_fim TEXT,
+  pr_desconto REAL,
+  cd_tabela_preco INTEGER NOT NULL DEFAULT 0,
+  cd_promocao INTEGER,
+  cd_promocao_internet INTEGER,
+  PRIMARY KEY (cd_empresa, cd_produto, nr_item, cd_tabela_preco, holding_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tpp_preco_vigente
+  ON tabela_preco_promocao (
+    holding_id, cd_empresa, cd_produto, cd_tabela_preco, cd_representante,
+    dt_inicio, dt_fim
+  );
+
 CREATE TABLE IF NOT EXISTS produto_desconto (
   cd_produto INTEGER NOT NULL,
   nr_item INTEGER NOT NULL,
@@ -819,6 +842,7 @@ const TABLES = [
   'imposto_uf',
   'tabela_icms',
   'tabela_preco_item',
+  'tabela_preco_promocao',
   'produto_desconto',
   'condicao_pagto_preco',
   'representante_saldo_flex',

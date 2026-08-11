@@ -1,4 +1,8 @@
-import type { ContextoCalculoItem, TabelaPrecoItemEngine } from './types';
+import type {
+  ContextoCalculoItem,
+  TabelaPrecoItemEngine,
+  TabelaPrecoPromocaoEngine,
+} from './types';
 import { roundN, safeNumber } from './casasDecimais';
 import { findDescontoFaixa } from '@/db/repositories/produtoDesconto';
 import { avaliarFormula } from './formula';
@@ -17,6 +21,7 @@ import { avaliarFormula } from './formula';
 export interface PrecoUnitarioInput {
   contexto: ContextoCalculoItem;
   precoTabela: TabelaPrecoItemEngine | null;
+  promocaoTabela?: TabelaPrecoPromocaoEngine | null;
   qt: number;
   cdProduto: number;
   holdingId: number;
@@ -47,6 +52,11 @@ export interface PrecoTrace {
   vlVendaTabela: number;
   vlPromocaoTabela: number;
   promocaoValida: boolean;
+  promocaoOrigem?:
+    | 'representante'
+    | 'geral'
+    | 'tabela_preco_item'
+    | null;
   vlBase: number;
   origem: PrecoUnitarioResult['origem'];
   cdCondicaoPreco: number | null;
@@ -105,21 +115,51 @@ export interface PrecoTrace {
   fonteIcmsInterno?: 'C' | 'R' | 'I' | null;
 }
 
+function dateKey(value: Date | string): string {
+  if (typeof value === 'string') return value.slice(0, 10);
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
 function isPromocaoValida(p: TabelaPrecoItemEngine | null, hoje: Date): boolean {
   if (!p) return false;
-  const ini = p.dtPromocaoInicio ? new Date(p.dtPromocaoInicio) : null;
-  const fim = p.dtPromocaoFim ? new Date(p.dtPromocaoFim) : null;
+  const atual = dateKey(hoje);
+  const ini = p.dtPromocaoInicio ? dateKey(p.dtPromocaoInicio) : null;
+  const fim = p.dtPromocaoFim ? dateKey(p.dtPromocaoFim) : null;
   const vl = safeNumber(p.vlPromocao);
   if (vl <= 0) return false;
-  if (ini && hoje < ini) return false;
-  if (fim && hoje > fim) return false;
+  if (ini && atual < ini) return false;
+  if (fim && atual > fim) return false;
+  return true;
+}
+
+function isPromocaoTabelaValida(
+  p: TabelaPrecoPromocaoEngine | null | undefined,
+  hoje: Date,
+): boolean {
+  if (!p || safeNumber(p.vlPromocao) <= 0) return false;
+  const atual = dateKey(hoje);
+  const ini = dateKey(p.dtInicio);
+  const fim = p.dtFim ? dateKey(p.dtFim) : null;
+  if (atual < ini) return false;
+  if (fim && atual > fim) return false;
   return true;
 }
 
 export async function calcularPrecoUnitario(
   input: PrecoUnitarioInput,
 ): Promise<PrecoUnitarioResult> {
-  const { contexto, precoTabela, qt, cdProduto, holdingId } = input;
+  const {
+    contexto,
+    precoTabela,
+    promocaoTabela,
+    qt,
+    cdProduto,
+    holdingId,
+  } = input;
   const empresa = contexto.empresa;
   const decimais = empresa.nrCasaDecimalValorVenda;
   const hoje = contexto.hoje ?? new Date();
@@ -251,19 +291,31 @@ export async function calcularPrecoUnitario(
     };
   }
 
-  // Passo 1 — Base: vl_promocao quando a CondicaoPreco é promoção
-  // (id_promocao='S') E a empresa habilita promo por tabela E há janela
-  // vigente. Caso contrário, vlVenda. Replica o `case when` do
-  // `Produto_Valores_find` no legado.
+  // Passo 1 — Base: a condição id_promocao consulta primeiro a tabela própria
+  // de promoções (representante → geral), já filtrada pelo produto e tabela de
+  // preço. Sem correspondência, mantém a regra anterior do tabela_preco_item.
   let vlBase = 0;
   let origem: PrecoUnitarioResult['origem'] = 'tabela';
   const condIsPromocao = !!cp?.idPromocao;
-  const promocaoValida =
+  const promocaoTabelaValida =
+    condIsPromocao && isPromocaoTabelaValida(promocaoTabela, hoje);
+  const promocaoLegadaValida =
     condIsPromocao &&
     empresa.idUtilizaPromocaoPorTabelaPreco === 'S' &&
     isPromocaoValida(precoTabela, hoje);
+  const promocaoValida = promocaoTabelaValida || promocaoLegadaValida;
+  const promocaoOrigem: PrecoTrace['promocaoOrigem'] = promocaoTabelaValida
+    ? promocaoTabela?.cdRepresentante != null
+      ? 'representante'
+      : 'geral'
+    : promocaoLegadaValida
+      ? 'tabela_preco_item'
+      : null;
+  const vlPromocaoAplicavel = promocaoTabelaValida
+    ? safeNumber(promocaoTabela?.vlPromocao)
+    : safeNumber(precoTabela?.vlPromocao);
   if (promocaoValida) {
-    vlBase = safeNumber(precoTabela!.vlPromocao);
+    vlBase = vlPromocaoAplicavel;
     origem = 'promocao';
   } else if (precoTabela) {
     vlBase = safeNumber(precoTabela.vlVenda);
@@ -428,7 +480,7 @@ export async function calcularPrecoUnitario(
       // sobrescreveriam os valores reais e quebrariam a fórmula.
       ...(contexto.custoVariaveis ?? {}),
       v_vl_venda: safeNumber(precoTabela?.vlVenda),
-      v_vl_promocao: safeNumber(precoTabela?.vlPromocao),
+      v_vl_promocao: vlPromocaoAplicavel,
       v_vl_custo: safeNumber(precoTabela?.vlCusto),
       v_pr_ipi: safeNumber(precoTabela?.prIpi),
       // Mantido por compatibilidade — `v_pr_icms` apontava para a margem
@@ -490,8 +542,9 @@ export async function calcularPrecoUnitario(
     trace: {
       cdTabelaPreco: contexto.cdTabelaPreco ?? null,
       vlVendaTabela: safeNumber(precoTabela?.vlVenda),
-      vlPromocaoTabela: safeNumber(precoTabela?.vlPromocao),
+      vlPromocaoTabela: vlPromocaoAplicavel,
       promocaoValida,
+      promocaoOrigem,
       vlBase: vlBaseInicial,
       origem,
       cdCondicaoPreco: cp?.cdCondicaoPreco ?? null,

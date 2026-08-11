@@ -5,7 +5,10 @@ import type {
   TabelaPrecoItemEngine,
 } from './types';
 import { calcularItem } from '.';
-import { listCondicoesPreco } from '@/db/repositories/condicaoPreco';
+import {
+  isCondicaoPrecoPromocao,
+  listCondicoesPreco,
+} from '@/db/repositories/condicaoPreco';
 
 export interface CondicaoPrecoOpt {
   cdCondicaoPreco: number;
@@ -39,7 +42,7 @@ export async function listarCondicoesPrecoProduto(params: {
   for (const c of condicoes) {
     const cdEng: CondicaoPrecoEngine = {
       cdCondicaoPreco: c.cd_condicao_preco,
-      idPromocao: c.id_promocao === 'S',
+      idPromocao: isCondicaoPrecoPromocao(c.id_promocao),
       prAcrescimo: Number(c.pr_acrescimo ?? 0),
       prAcrescimoComissao: Number(c.pr_acrescimo_comissao ?? 0),
       idTipoAcrescimo: (c.id_tipo_acrescimo ?? 'V') as 'V' | 'N',

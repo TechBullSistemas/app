@@ -50,6 +50,15 @@ export interface TabelaPrecoItemEngine {
   prCofinsSaida?: number;
 }
 
+export interface TabelaPrecoPromocaoEngine {
+  vlPromocao: number;
+  prComissao: number;
+  cdRepresentante: number | null;
+  nrItem: number;
+  dtInicio: string;
+  dtFim: string | null;
+}
+
 export interface CondicaoPrecoEngine {
   cdCondicaoPreco: number;
   idPromocao: boolean;

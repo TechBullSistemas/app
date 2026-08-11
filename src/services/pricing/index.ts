@@ -12,6 +12,7 @@ import type {
   ProdutoEngine,
   ResultadoCalculoItem,
   TabelaPrecoItemEngine,
+  TabelaPrecoPromocaoEngine,
 } from './types';
 import { calcularAliquotas } from './aliquotas';
 import { calcularSubstituicao } from './substituicao';
@@ -23,9 +24,13 @@ import { roundN, safeNumber } from './casasDecimais';
 import { findImpostoUf } from '@/db/repositories/impostos';
 import { findTabelaIcms } from '@/db/repositories/tabelaIcms';
 import { findCondicaoPagtoPreco } from '@/db/repositories/condicaoPagtoPreco';
-import { findCondicaoPreco } from '@/db/repositories/condicaoPreco';
+import {
+  findCondicaoPreco,
+  isCondicaoPrecoPromocao,
+} from '@/db/repositories/condicaoPreco';
 import { findCondicaoPagto } from '@/db/repositories/condicaoPagto';
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
+import { findTabelaPrecoPromocao } from '@/db/repositories/tabelaPrecoPromocao';
 import { listCustoVariavel } from '@/db/repositories/parametros';
 import { getUltimaVendaProdutoCliente } from '@/db/repositories/notas';
 
@@ -172,13 +177,44 @@ export async function calcularItem(
     if (c) {
       contexto.condicaoPreco = {
         cdCondicaoPreco: c.cd_condicao_preco,
-        idPromocao: c.id_promocao === 'S',
+        idPromocao: isCondicaoPrecoPromocao(c.id_promocao),
         prAcrescimo: Number(c.pr_acrescimo ?? 0),
         prAcrescimoComissao: Number(c.pr_acrescimo_comissao ?? 0),
         idTipoAcrescimo: (c.id_tipo_acrescimo ?? 'V') as 'V' | 'N' | 'M',
         idUltimaVenda: (c.id_ultima_venda ?? 0) > 0,
         vlValor: Number(c.vl_valor ?? 0),
       };
+    }
+  }
+
+  // Condições marcadas como promoção consultam a tabela própria do DUAPI.
+  // A query prioriza a promoção do representante e cai para a geral. Quando
+  // não há uma linha vigente para produto + tabela, o pipeline legado segue
+  // inalterado (inclusive o fallback de promoção do tabela_preco_item).
+  let promocaoTabela: TabelaPrecoPromocaoEngine | null = null;
+  if (contexto.condicaoPreco?.idPromocao && contexto.cdTabelaPreco) {
+    try {
+      const promocao = await findTabelaPrecoPromocao({
+        cdEmpresa: empresa.cdEmpresa,
+        cdProduto: produto.cdProduto,
+        cdTabelaPreco: contexto.cdTabelaPreco,
+        cdRepresentante: contexto.representante?.cdRepresentante,
+        holdingId,
+        hoje: contexto.hoje,
+      });
+      if (promocao) {
+        promocaoTabela = {
+          vlPromocao: Number(promocao.vl_promocao),
+          prComissao: Number(promocao.pr_comissao),
+          cdRepresentante: promocao.cd_representante,
+          nrItem: promocao.nr_item,
+          dtInicio: promocao.dt_inicio,
+          dtFim: promocao.dt_fim,
+        };
+      }
+    } catch {
+      // Banco de uma versão anterior ou sync ainda incompleto: mantém o preço
+      // que o app já calculava antes desta tabela existir.
     }
   }
 
@@ -295,6 +331,7 @@ export async function calcularItem(
     const pre = await calcularPrecoUnitario({
       contexto,
       precoTabela,
+      promocaoTabela,
       qt,
       cdProduto: produto.cdProduto,
       holdingId,
