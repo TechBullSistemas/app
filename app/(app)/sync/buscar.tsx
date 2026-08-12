@@ -22,6 +22,10 @@ export default function BuscarInformacoesScreen() {
 
   const [photoProgress, setPhotoProgress] = useState<{ done: number; total: number } | null>(null);
   const [photosRunning, setPhotosRunning] = useState(false);
+  const [logoProgress, setLogoProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
 
   const summary = useMemo(() => {
     const list = Object.values(entities);
@@ -44,7 +48,11 @@ export default function BuscarInformacoesScreen() {
           text: 'Continuar',
           onPress: async () => {
             try {
-              await runDownloadSync();
+              setLogoProgress({ done: 0, total: 0 });
+              await runDownloadSync({
+                onLogoProgress: (done, total) =>
+                  setLogoProgress({ done, total }),
+              });
               setPhotosRunning(true);
               await downloadPendingPhotos({
                 onProgress: (done, total) => setPhotoProgress({ done, total }),
@@ -115,6 +123,25 @@ export default function BuscarInformacoesScreen() {
           </View>
         </View>
       )}
+
+      {logoProgress && logoProgress.total > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Identidade da empresa</Text>
+          <View style={styles.line}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.lineLabel}>Logo para uso offline</Text>
+              <Text style={styles.lineSub}>
+                {logoProgress.done} / {logoProgress.total}
+              </Text>
+            </View>
+            <Status
+              status={
+                logoProgress.done < logoProgress.total ? 'running' : 'done'
+              }
+            />
+          </View>
+        </View>
+      ) : null}
 
       {downloadError ? (
         <View style={[styles.card, { backgroundColor: '#fee2e2' }]}>

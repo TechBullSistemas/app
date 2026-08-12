@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS empresa (
   nome TEXT,
   razao_social TEXT,
   cnpj TEXT,
+  logo_url TEXT,
+  logo_local TEXT,
   PRIMARY KEY (cd_empresa, holding_id)
 );
 
@@ -544,6 +546,8 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   );
 
   // Empresa: flags do motor de precificação + UF + fórmulas dinâmicas.
+  await ensureColumn(db, 'empresa', 'logo_url', 'logo_url TEXT');
+  await ensureColumn(db, 'empresa', 'logo_local', 'logo_local TEXT');
   await ensureColumn(db, 'empresa', 'cd_estado', 'cd_estado TEXT');
   await ensureColumn(
     db,
@@ -859,6 +863,11 @@ export async function clearSyncTables(db: SQLite.SQLiteDatabase) {
         await db.execAsync(
           `DELETE FROM cliente WHERE origem IS NULL OR origem <> 'local' OR pending_sync = 0;`,
         );
+      } else if (t === 'empresa') {
+        // Mantém temporariamente a referência da logo já baixada. A carga de
+        // empresas reaproveita o arquivo quando a URL não mudou e remove
+        // empresas que deixaram de existir no retorno do servidor.
+        continue;
       } else {
         await db.execAsync(`DELETE FROM ${t};`);
       }

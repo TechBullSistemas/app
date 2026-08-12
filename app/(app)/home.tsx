@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +21,7 @@ import { listMetas } from '@/api/meta';
 import { countPending } from '@/db/repositories/outbox';
 import { getAppVersion, getVersionLabel } from '@/config/version';
 import { checkAndApplyUpdate, isUpdatesEnabled } from '@/services/updates';
+import { type EmpresaRow, getEmpresaById } from '@/db/repositories/empresas';
 
 interface MenuItem {
   label: string;
@@ -41,6 +43,7 @@ export default function HomeScreen() {
   const layout = getResponsiveLayout(windowWidth);
 
   const [pending, setPending] = useState({ vendas: 0, visitas: 0, clientes: 0 });
+  const [empresa, setEmpresa] = useState<EmpresaRow | null>(null);
   // Só exibe o atalho "Meta" se o vendedor tiver meta cadastrada. O último
   // resultado fica em cache para o atalho continuar correto offline.
   const [hasMetas, setHasMetas] = useState(false);
@@ -61,6 +64,30 @@ export default function HomeScreen() {
         alive = false;
       };
     }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      if (user?.cdEmpresa == null || user?.holdingId == null) {
+        setEmpresa(null);
+        return () => {
+          alive = false;
+        };
+      }
+
+      getEmpresaById(user.cdEmpresa, user.holdingId)
+        .then((row) => {
+          if (alive) setEmpresa(row);
+        })
+        .catch(() => {
+          if (alive) setEmpresa(null);
+        });
+
+      return () => {
+        alive = false;
+      };
+    }, [user?.cdEmpresa, user?.holdingId]),
   );
 
   useFocusEffect(
@@ -159,10 +186,18 @@ export default function HomeScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 16 }}>
       <View style={styles.header}>
+        {empresa?.logo_local || empresa?.logo_url ? (
+          <Image
+            source={{ uri: empresa.logo_local ?? empresa.logo_url ?? '' }}
+            style={styles.companyLogo}
+            resizeMode="contain"
+            accessibilityLabel={`Logo de ${empresa.nome ?? 'empresa'}`}
+          />
+        ) : null}
         <View style={{ flex: 1 }}>
           <Text style={styles.hello}>Olá, {user?.nome ?? 'Representante'}</Text>
-          {user?.holdingName ? (
-            <Text style={styles.subtle}>{user.holdingName}</Text>
+          {empresa?.nome || user?.holdingName ? (
+            <Text style={styles.subtle}>{empresa?.nome ?? user?.holdingName}</Text>
           ) : null}
         </View>
         <OnlineBadge />
@@ -291,6 +326,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   hello: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+  companyLogo: { width: 64, height: 56 },
   subtle: { color: '#64748b', marginTop: 2, fontSize: 12 },
   grid: {
     flexDirection: 'row',

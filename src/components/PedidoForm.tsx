@@ -35,7 +35,11 @@ import {
   getOutboxVenda,
   updateOutboxVendaPayload,
 } from '@/db/repositories/outbox';
-import { gerarPdfPedido, lerPdfBase64 } from '@/services/pdfVenda';
+import {
+  gerarPdfPedido,
+  getEmpresaPedidoPdfData,
+  lerPdfBase64,
+} from '@/services/pdfVenda';
 import { enviarVendaPorEmail } from '@/api/email';
 import { extractApiErrorMessage } from '@/api/client';
 import {
@@ -1398,7 +1402,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       if (enviarEmailAoSalvar && !isEdit) {
         try {
           const numero = cId.slice(0, 8).toUpperCase();
+          const empresaPdf = await getEmpresaPedidoPdfData(
+            user.cdEmpresa,
+            user.holdingId,
+          );
           const pdfUri = await gerarPdfPedido({
+            ...empresaPdf,
             numero,
             clienteNome: cliente.nome ?? `Cliente #${cliente.cd_cliente}`,
             clienteCpfCnpj: cliente.cpf_cnpj ?? null,
@@ -1415,6 +1424,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             to: emailDest,
             subject: `Pedido ${numero}`,
             nrPrevenda: numero,
+            cdEmpresa: user.cdEmpresa,
+            empresaName: empresaPdf.empresaNome,
             pdfBase64: base64,
             filename: `pedido-${numero}.pdf`,
           });

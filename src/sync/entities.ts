@@ -22,6 +22,7 @@ import { bulkInsertTabelaPrecoPromocao } from '@/db/repositories/tabelaPrecoProm
 import { bulkInsertProdutoDesconto } from '@/db/repositories/produtoDesconto';
 import { bulkInsertCondicaoPagtoPreco } from '@/db/repositories/condicaoPagtoPreco';
 import { bulkInsertProdutoCustoVariavel } from '@/db/repositories/parametros';
+import { bulkInsertEmpresas } from '@/db/repositories/empresas';
 
 function aux(key: string) {
   return (items: any[], holdingIdFallback?: number) =>
@@ -29,7 +30,7 @@ function aux(key: string) {
 }
 
 export const SYNC_ENTITIES: SyncEntityDef[] = [
-  { key: 'empresa', endpoint: 'empresa', label: 'Empresas', paged: false, insertFn: aux('empresa') },
+  { key: 'empresa', endpoint: 'empresa', label: 'Empresas', paged: false, insertFn: bulkInsertEmpresas },
   { key: 'marca', endpoint: 'marca', label: 'Marcas', paged: false, insertFn: aux('marca') },
   { key: 'cor', endpoint: 'cor', label: 'Cores', paged: false, insertFn: aux('cor') },
   { key: 'tamanho', endpoint: 'tamanho', label: 'Tamanhos', paged: false, insertFn: aux('tamanho') },

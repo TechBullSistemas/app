@@ -2,6 +2,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { getEmpresaById } from '@/db/repositories/empresas';
+
 export interface PedidoItem {
   cdProduto: number;
   descricao: string;
@@ -20,6 +22,7 @@ export interface PedidoPdfData {
   numero?: string | number | null;
   empresaNome?: string;
   empresaCnpj?: string;
+  empresaLogoUri?: string | null;
   clienteNome: string;
   clienteCpfCnpj?: string | null;
   clienteEndereco?: string | null;
@@ -79,7 +82,49 @@ function escape(s: string) {
     .replace(/>/g, '&gt;');
 }
 
-function buildHtml(p: PedidoPdfData) {
+function escapeAttribute(s: string) {
+  return escape(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function resolveLogoSource(uri?: string | null): Promise<string | null> {
+  const value = uri?.trim();
+  if (!value) return null;
+  if (value.startsWith('data:image/') || /^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  try {
+    const base64 = await FileSystem.readAsStringAsync(value, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const lower = value.toLowerCase();
+    const mime =
+      lower.endsWith('.jpg') || lower.endsWith('.jpeg')
+        ? 'image/jpeg'
+        : lower.endsWith('.webp')
+          ? 'image/webp'
+          : 'image/png';
+    return `data:${mime};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function getEmpresaPedidoPdfData(
+  cdEmpresa: number,
+  holdingId: number,
+): Promise<
+  Pick<PedidoPdfData, 'empresaNome' | 'empresaCnpj' | 'empresaLogoUri'>
+> {
+  const empresa = await getEmpresaById(cdEmpresa, holdingId);
+  return {
+    empresaNome: empresa?.nome ?? empresa?.razao_social ?? undefined,
+    empresaCnpj: empresa?.cnpj ?? undefined,
+    empresaLogoUri: empresa?.logo_local ?? empresa?.logo_url ?? null,
+  };
+}
+
+function buildHtml(p: PedidoPdfData, empresaLogoSrc: string | null) {
   return `
   <!doctype html>
   <html>
@@ -91,6 +136,9 @@ function buildHtml(p: PedidoPdfData) {
       h1 { margin: 0; font-size: 22px; }
       h3 { margin: 18px 0 6px; font-size: 14px; color: #1e3a8a; }
       .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; margin-bottom: 12px; }
+      .company { display: flex; align-items: center; justify-content: flex-end; gap: 10px; max-width: 52%; }
+      .company-logo { width: 64px; height: 56px; object-fit: contain; }
+      .company-text { text-align: right; }
       .label { color: #64748b; font-size: 11px; text-transform: uppercase; }
       .value { font-weight: 600; }
       table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -109,9 +157,12 @@ function buildHtml(p: PedidoPdfData) {
         <div class="label">Emitido em</div>
         <div class="value">${escape(p.data)}</div>
       </div>
-      <div style="text-align:right;">
-        <div class="value">${escape(p.empresaNome ?? '')}</div>
-        ${p.empresaCnpj ? `<div class="label">CNPJ ${escape(p.empresaCnpj)}</div>` : ''}
+      <div class="company">
+        ${empresaLogoSrc ? `<img class="company-logo" src="${escapeAttribute(empresaLogoSrc)}" alt="Logo da empresa" />` : ''}
+        <div class="company-text">
+          <div class="value">${escape(p.empresaNome ?? '')}</div>
+          ${p.empresaCnpj ? `<div class="label">CNPJ ${escape(p.empresaCnpj)}</div>` : ''}
+        </div>
       </div>
     </div>
 
@@ -159,7 +210,8 @@ function buildHtml(p: PedidoPdfData) {
 }
 
 export async function gerarPdfPedido(p: PedidoPdfData) {
-  const html = buildHtml(p);
+  const empresaLogoSrc = await resolveLogoSource(p.empresaLogoUri);
+  const html = buildHtml(p, empresaLogoSrc);
   const { uri } = await Print.printToFileAsync({ html });
   return uri;
 }

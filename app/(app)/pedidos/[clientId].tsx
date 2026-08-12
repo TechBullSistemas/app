@@ -19,6 +19,7 @@ import { deleteOutboxVenda } from '@/db/repositories/outbox';
 import {
   compartilharPdf,
   gerarPdfPedido,
+  getEmpresaPedidoPdfData,
   imprimirPdf,
   lerPdfBase64,
   PedidoPdfData,
@@ -77,10 +78,14 @@ export default function PedidoDetalhe() {
       setLoading(false);
       return;
     }
-    const cli = await getClienteById(r.cd_cliente, r.holding_id);
+    const [cli, empresaPdf] = await Promise.all([
+      getClienteById(r.cd_cliente, r.holding_id),
+      getEmpresaPedidoPdfData(r.cd_empresa, r.holding_id),
+    ]);
     const payload = JSON.parse(r.payload);
     const display = payload.__display ?? payload;
     const data: PedidoPdfData = {
+      ...empresaPdf,
       numero: r.cd_prevenda ?? r.client_id.slice(0, 8).toUpperCase(),
       clienteNome: cli?.nome ?? `Cliente #${r.cd_cliente}`,
       clienteCpfCnpj: cli?.cpf_cnpj ?? null,
@@ -173,7 +178,7 @@ export default function PedidoDetalhe() {
       return;
     }
     const uri = await ensurePdf();
-    if (!uri || !pdfData) return;
+    if (!uri || !pdfData || !row) return;
     setEnviando(true);
     try {
       const base64 = await lerPdfBase64(uri);
@@ -181,6 +186,8 @@ export default function PedidoDetalhe() {
         to: emailDest,
         subject: `Pedido ${pdfData.numero}`,
         nrPrevenda: pdfData.numero ?? undefined,
+        cdEmpresa: row.cd_empresa,
+        empresaName: pdfData.empresaNome,
         pdfBase64: base64,
         filename: `pedido-${pdfData.numero}.pdf`,
       });
@@ -203,7 +210,9 @@ export default function PedidoDetalhe() {
     await MailComposer.composeAsync({
       recipients: emailDest ? [emailDest] : [],
       subject: `Pedido ${pdfData?.numero ?? ''}`,
-      body: 'Segue em anexo o pedido.',
+      body: pdfData?.empresaNome
+        ? `Segue em anexo o pedido da empresa ${pdfData.empresaNome}.`
+        : 'Segue em anexo o pedido.',
       attachments: [uri],
     });
   }

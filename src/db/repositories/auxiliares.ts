@@ -19,6 +19,7 @@ const MAPS: Record<string, MapDef> = {
       { from: ['nmEmpresa', 'nome', 'nmReduzido'], to: 'nome' },
       { from: ['razaoSocial', 'nmEmpresa'], to: 'razao_social' },
       { from: 'cnpj', to: 'cnpj' },
+      { from: 'logoUrl', to: 'logo_url' },
       { from: 'cdEstado', to: 'cd_estado' },
       { from: 'cdTabelaPrecoPadrao', to: 'cd_tabela_preco_padrao' },
       { from: 'idDestacaIpi', to: 'id_destaca_ipi' },

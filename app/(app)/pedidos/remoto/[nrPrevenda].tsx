@@ -22,6 +22,7 @@ import { getClienteById } from '@/db/repositories/clientes';
 import {
   compartilharPdf,
   gerarPdfPedido,
+  getEmpresaPedidoPdfData,
   imprimirPdf,
   lerPdfBase64,
   PedidoPdfData,
@@ -88,8 +89,11 @@ export default function PedidoRemotoDetalhe() {
       return;
     }
 
-    const itens = await listPrevendaItens(nr, emp, hid);
-    const cli = await getClienteById(r.cd_cliente, r.holding_id);
+    const [itens, cli, empresaPdf] = await Promise.all([
+      listPrevendaItens(nr, emp, hid),
+      getClienteById(r.cd_cliente, r.holding_id),
+      getEmpresaPedidoPdfData(r.cd_empresa, r.holding_id),
+    ]);
     let raw: any = null;
     try {
       raw = r.raw_json ? JSON.parse(r.raw_json) : null;
@@ -109,6 +113,7 @@ export default function PedidoRemotoDetalhe() {
     }));
 
     const data: PedidoPdfData = {
+      ...empresaPdf,
       numero: r.nr_prevenda,
       clienteNome: r.nm_cliente ?? cli?.nome ?? `Cliente #${r.cd_cliente}`,
       clienteCpfCnpj: cli?.cpf_cnpj ?? null,
@@ -175,7 +180,7 @@ export default function PedidoRemotoDetalhe() {
       return;
     }
     const uri = await ensurePdf();
-    if (!uri || !pdfData) return;
+    if (!uri || !pdfData || !row) return;
     setEnviando(true);
     try {
       const base64 = await lerPdfBase64(uri);
@@ -183,6 +188,8 @@ export default function PedidoRemotoDetalhe() {
         to: emailDest,
         subject: `Pedido ${pdfData.numero}`,
         nrPrevenda: pdfData.numero ?? undefined,
+        cdEmpresa: row.cd_empresa,
+        empresaName: pdfData.empresaNome,
         pdfBase64: base64,
         filename: `pedido-${pdfData.numero}.pdf`,
       });
@@ -208,7 +215,9 @@ export default function PedidoRemotoDetalhe() {
     await MailComposer.composeAsync({
       recipients: emailDest ? [emailDest] : [],
       subject: `Pedido ${pdfData?.numero ?? ''}`,
-      body: 'Segue em anexo o pedido.',
+      body: pdfData?.empresaNome
+        ? `Segue em anexo o pedido da empresa ${pdfData.empresaNome}.`
+        : 'Segue em anexo o pedido.',
       attachments: [uri],
     });
   }

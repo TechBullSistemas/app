@@ -5,10 +5,14 @@ import { resetSyncMeta, upsertSyncMeta } from '@/db/repositories/syncMeta';
 import { SYNC_ENTITIES, SYNC_ENTITY_KEYS, SyncEntityDef } from './entities';
 import { useSyncStore } from '@/stores/sync';
 import { useSessionStore } from '@/stores/session';
+import { downloadPendingCompanyLogos } from '@/services/companyLogoCache';
 
 const PAGE_SIZE = 500;
 
-export async function runDownloadSync(opts?: { onPhotoStart?: () => void }) {
+export async function runDownloadSync(opts?: {
+  onPhotoStart?: () => void;
+  onLogoProgress?: (done: number, total: number) => void;
+}) {
   const store = useSyncStore.getState();
   store.startDownload();
 
@@ -22,6 +26,16 @@ export async function runDownloadSync(opts?: { onPhotoStart?: () => void }) {
 
     for (const entity of SYNC_ENTITIES) {
       await syncEntity(entity, holdingId, cdEmpresa);
+    }
+
+    try {
+      await downloadPendingCompanyLogos({
+        onProgress: opts?.onLogoProgress,
+      });
+    } catch (error) {
+      // A logo é opcional: uma falha de arquivo não invalida os dados
+      // operacionais que já foram sincronizados.
+      console.warn('[sync] não foi possível armazenar a logo offline:', error);
     }
 
     store.finishDownload(true);

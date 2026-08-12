@@ -4,6 +4,7 @@ export interface EnviarVendaEmailParams {
   to: string;
   subject?: string;
   nrPrevenda?: number | string | null;
+  cdEmpresa?: number;
   empresaName?: string;
   pdfBase64: string;
   filename?: string;
@@ -19,6 +20,7 @@ export async function enviarVendaPorEmail(params: EnviarVendaEmailParams) {
       to: params.to,
       subject: params.subject,
       nrPrevenda: params.nrPrevenda ?? undefined,
+      cdEmpresa: params.cdEmpresa,
       empresaName: params.empresaName,
       htmlBody: params.htmlBody,
       attachment: {
