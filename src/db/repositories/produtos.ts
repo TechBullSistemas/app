@@ -55,7 +55,13 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
           cd_unidade, cd_cor, cd_tamanho, vl_venda, vl_atacado, vl_promocao, qt_disponivel,
           foto_url, foto_local, raw_json)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-           COALESCE((SELECT foto_local FROM produto WHERE cd_produto = ? AND holding_id = ?), NULL),
+           COALESCE(
+             (SELECT foto_local FROM produto
+               WHERE cd_produto = ? AND holding_id = ? AND foto_url = ?),
+             (SELECT foto_local FROM produto_foto_cache
+               WHERE cd_produto = ? AND holding_id = ? AND foto_url = ?),
+             NULL
+           ),
            ?)`,
         [
           it.cdProduto,
@@ -75,6 +81,10 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
           it.fotoUrl ?? null,
           it.cdProduto,
           holdingId,
+          it.fotoUrl ?? null,
+          it.cdProduto,
+          holdingId,
+          it.fotoUrl ?? null,
           JSON.stringify(it),
         ],
       );
@@ -229,6 +239,25 @@ export async function setProdutoFotoLocal(cdProduto: number, holdingId: number, 
     'UPDATE produto SET foto_local = ? WHERE cd_produto = ? AND holding_id = ?',
     [path, cdProduto, holdingId],
   );
+
+  if (path) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO produto_foto_cache
+        (cd_produto, holding_id, foto_url, foto_local)
+       SELECT cd_produto, holding_id, foto_url, ?
+         FROM produto
+        WHERE cd_produto = ?
+          AND holding_id = ?
+          AND foto_url IS NOT NULL
+          AND foto_url <> ''`,
+      [path, cdProduto, holdingId],
+    );
+  } else {
+    await db.runAsync(
+      'DELETE FROM produto_foto_cache WHERE cd_produto = ? AND holding_id = ?',
+      [cdProduto, holdingId],
+    );
+  }
 }
 
 export async function clearProdutoFotoUrl(cdProduto: number, holdingId: number) {
@@ -239,13 +268,19 @@ export async function clearProdutoFotoUrl(cdProduto: number, holdingId: number) 
   );
 }
 
-export async function listProdutosComFotoPendente(limit = 200): Promise<ProdutoRow[]> {
+export type ProdutoFotoPendente = Pick<
+  ProdutoRow,
+  'cd_produto' | 'holding_id' | 'foto_url'
+>;
+
+export async function listProdutosComFotoPendente(): Promise<ProdutoFotoPendente[]> {
   const db = await getDb();
-  return db.getAllAsync<ProdutoRow>(
-    `SELECT * FROM produto
-     WHERE foto_url IS NOT NULL AND foto_url <> '' AND foto_local IS NULL
-     LIMIT ?`,
-    [limit],
+  return db.getAllAsync<ProdutoFotoPendente>(
+    `SELECT cd_produto, holding_id, foto_url
+       FROM produto
+      WHERE foto_url IS NOT NULL
+        AND foto_url <> ''
+        AND foto_local IS NULL`,
   );
 }
 

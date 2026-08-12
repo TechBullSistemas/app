@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS produto (
 CREATE INDEX IF NOT EXISTS idx_produto_descricao ON produto(descricao);
 CREATE INDEX IF NOT EXISTS idx_produto_referencia ON produto(referencia);
 
+-- Mantém o vínculo das fotos baixadas entre sincronizações completas. A tabela
+-- de produto é recriada a cada "Buscar informações", mas os arquivos ficam no
+-- diretório de documentos do app e não precisam ser baixados novamente quando
+-- a URL enviada pela API continua igual.
+CREATE TABLE IF NOT EXISTS produto_foto_cache (
+  cd_produto INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  foto_url TEXT NOT NULL,
+  foto_local TEXT NOT NULL,
+  PRIMARY KEY (cd_produto, holding_id)
+);
+
 CREATE TABLE IF NOT EXISTS marca (
   cd_marca INTEGER NOT NULL,
   holding_id INTEGER NOT NULL,
@@ -857,6 +869,17 @@ const TABLES = [
 
 export async function clearSyncTables(db: SQLite.SQLiteDatabase) {
   await db.withTransactionAsync(async () => {
+    await db.execAsync(`
+      INSERT OR REPLACE INTO produto_foto_cache
+        (cd_produto, holding_id, foto_url, foto_local)
+      SELECT cd_produto, holding_id, foto_url, foto_local
+        FROM produto
+       WHERE foto_url IS NOT NULL
+         AND foto_url <> ''
+         AND foto_local IS NOT NULL
+         AND foto_local <> '';
+    `);
+
     for (const t of TABLES) {
       if (t === 'cliente') {
         // Preserva clientes cadastrados offline ainda não sincronizados

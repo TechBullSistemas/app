@@ -3,10 +3,12 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import {
   clearProdutoFotoUrl,
   listProdutosComFotoPendente,
+  type ProdutoFotoPendente,
   setProdutoFotoLocal,
 } from '@/db/repositories/produtos';
 
 const PHOTOS_DIR = `${FileSystem.documentDirectory ?? ''}product-photos/`;
+const PHOTO_DOWNLOAD_CONCURRENCY = 4;
 
 async function ensureDir() {
   const info = await FileSystem.getInfoAsync(PHOTOS_DIR);
@@ -25,17 +27,17 @@ export async function downloadPendingPhotos(opts?: {
   onProgress?: (done: number, total: number) => void;
 }) {
   await ensureDir();
-  const pending = await listProdutosComFotoPendente(2000);
+  const pending = await listProdutosComFotoPendente();
   const total = pending.length;
   let done = 0;
   let saved = 0;
   let failed = 0;
+  let nextIndex = 0;
+  opts?.onProgress?.(0, total);
 
-  for (const p of pending) {
+  async function downloadOne(p: ProdutoFotoPendente) {
     if (!p.foto_url) {
-      done++;
-      opts?.onProgress?.(done, total);
-      continue;
+      return;
     }
 
     const tmpPath = `${FileSystem.cacheDirectory}tmp-${p.holding_id}-${p.cd_produto}.jpg`;
@@ -48,7 +50,7 @@ export async function downloadPendingPhotos(opts?: {
         await safeDelete(tmpPath);
         await clearProdutoFotoUrl(p.cd_produto, p.holding_id);
         failed++;
-        continue;
+        return;
       }
 
       let compressed: { uri: string };
@@ -62,7 +64,7 @@ export async function downloadPendingPhotos(opts?: {
         await safeDelete(tmpPath);
         await clearProdutoFotoUrl(p.cd_produto, p.holding_id);
         failed++;
-        continue;
+        return;
       }
 
       await safeDelete(finalPath);
@@ -78,7 +80,7 @@ export async function downloadPendingPhotos(opts?: {
           await safeDelete(tmpPath);
           await clearProdutoFotoUrl(p.cd_produto, p.holding_id);
           failed++;
-          continue;
+          return;
         }
         await safeDelete(compressed.uri);
       }
@@ -89,7 +91,7 @@ export async function downloadPendingPhotos(opts?: {
         console.warn(`[photoCache] arquivo final NÃO existe após move: ${finalPath}`);
         await clearProdutoFotoUrl(p.cd_produto, p.holding_id);
         failed++;
-        continue;
+        return;
       }
 
       await setProdutoFotoLocal(p.cd_produto, p.holding_id, finalPath);
@@ -98,11 +100,22 @@ export async function downloadPendingPhotos(opts?: {
       await safeDelete(tmpPath);
       await clearProdutoFotoUrl(p.cd_produto, p.holding_id);
       failed++;
-    } finally {
+    }
+  }
+
+  async function worker() {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= total) return;
+
+      await downloadOne(pending[index]);
       done++;
       opts?.onProgress?.(done, total);
     }
   }
+
+  const workerCount = Math.min(PHOTO_DOWNLOAD_CONCURRENCY, total);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   return { total, done, saved, failed };
 }
