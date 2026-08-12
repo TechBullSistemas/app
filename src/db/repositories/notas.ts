@@ -88,7 +88,9 @@ export async function bulkInsertTitulos(items: any[], holdingIdFallback?: number
 export async function listNotasByCliente(cdCliente: number, holdingId: number) {
   const db = await getDb();
   return db.getAllAsync<NotaFiscalRow>(
-    'SELECT * FROM nota_fiscal_saida WHERE cd_cliente = ? AND holding_id = ? ORDER BY dt_emissao DESC',
+    `SELECT * FROM nota_fiscal_saida
+     WHERE cd_cliente = ? AND holding_id = ?
+     ORDER BY dt_emissao DESC, cd_nota DESC, cd_empresa DESC`,
     [cdCliente, holdingId],
   );
 }
@@ -328,6 +330,29 @@ export interface ProdutoCompradoCliente {
   vendas_count: number;
 }
 
+function isCancelado(idSituacao: unknown): boolean {
+  return String(idSituacao ?? '').trim().toUpperCase() === 'CA';
+}
+
+/**
+ * Extrai somente itens válidos de uma nota sincronizada. O endpoint mobile
+ * envia o cabeçalho e `notaFiscalSaidaItem` no raw_json, incluindo a situação
+ * de ambos; assim a referência funciona offline e desconsidera cancelamentos.
+ */
+function getItensVendaAtivos(nota: NotaFiscalRow): any[] {
+  if (!nota.raw_json) return [];
+  try {
+    const parsed = JSON.parse(nota.raw_json);
+    if (isCancelado(parsed?.idSituacao)) return [];
+    const items = Array.isArray(parsed?.notaFiscalSaidaItem)
+      ? parsed.notaFiscalSaidaItem
+      : [];
+    return items.filter((item: any) => !isCancelado(item?.idSituacao));
+  } catch {
+    return [];
+  }
+}
+
 export async function listProdutosCompradosCliente(
   cdCliente: number,
   holdingId: number,
@@ -337,16 +362,7 @@ export async function listProdutosCompradosCliente(
   const seenNotas = new Map<number, Set<string>>();
 
   for (const n of notas) {
-    if (!n.raw_json) continue;
-    let parsed: any;
-    try {
-      parsed = JSON.parse(n.raw_json);
-    } catch {
-      continue;
-    }
-    const items = Array.isArray(parsed?.notaFiscalSaidaItem)
-      ? parsed.notaFiscalSaidaItem
-      : [];
+    const items = getItensVendaAtivos(n);
     for (const it of items) {
       const cd = Number(it.cdProduto);
       if (!Number.isFinite(cd)) continue;
@@ -399,6 +415,41 @@ export interface NotaProdutoLinha {
   vlTotal: number;
 }
 
+export interface UltimaVendaProdutoCliente {
+  vlUnitario: number;
+  dtEmissao: string | null;
+}
+
+/**
+ * Mapa produto → última venda válida do cliente. Como as notas vêm ordenadas
+ * da mais recente para a mais antiga, a primeira ocorrência de cada produto
+ * é a referência correta. Retorna também vendas com valor unitário zero.
+ */
+export async function getUltimasVendasCliente(
+  cdCliente: number,
+  holdingId: number,
+): Promise<Map<number, UltimaVendaProdutoCliente>> {
+  const notas = await listNotasByCliente(cdCliente, holdingId);
+  const result = new Map<number, UltimaVendaProdutoCliente>();
+
+  for (const nota of notas) {
+    for (const item of getItensVendaAtivos(nota)) {
+      const cdProduto = Number(item.cdProduto);
+      if (!Number.isFinite(cdProduto) || result.has(cdProduto)) continue;
+
+      const vlUnitario = num(item.vlUnitario);
+      if (vlUnitario == null) continue;
+
+      result.set(cdProduto, {
+        vlUnitario,
+        dtEmissao: nota.dt_emissao,
+      });
+    }
+  }
+
+  return result;
+}
+
 /**
  * Último preço unitário praticado de um produto para um cliente (forma de
  * preço 'V' — `empresa.id_forma_preco_venda_produto`). As notas já vêm
@@ -410,11 +461,8 @@ export async function getUltimaVendaProdutoCliente(
   holdingId: number,
   cdProduto: number,
 ): Promise<number | null> {
-  const linhas = await listNotasByClienteProduto(cdCliente, holdingId, cdProduto);
-  for (const l of linhas) {
-    if (l.vlUnitario > 0) return l.vlUnitario;
-  }
-  return null;
+  const ultimas = await getUltimasVendasCliente(cdCliente, holdingId);
+  return ultimas.get(cdProduto)?.vlUnitario ?? null;
 }
 
 export async function listNotasByClienteProduto(
@@ -425,27 +473,22 @@ export async function listNotasByClienteProduto(
   const notas = await listNotasByCliente(cdCliente, holdingId);
   const out: NotaProdutoLinha[] = [];
   for (const n of notas) {
-    if (!n.raw_json) continue;
-    try {
-      const parsed = JSON.parse(n.raw_json);
-      const items = Array.isArray(parsed?.notaFiscalSaidaItem)
-        ? parsed.notaFiscalSaidaItem
-        : [];
-      for (const it of items) {
-        if (Number(it.cdProduto) === cdProduto) {
-          const qt = Number(it.qtProduto ?? 0) || 0;
-          const vlUnit = Number(it.vlUnitario ?? 0) || 0;
-          const vlDesc = Number(it.vlDesconto ?? 0) || 0;
-          const vlAcr = Number(it.vlAcrescimo ?? 0) || 0;
-          out.push({
-            nota: n,
-            qt,
-            vlUnitario: vlUnit,
-            vlTotal: qt * vlUnit - vlDesc + vlAcr,
-          });
-        }
+    const items = getItensVendaAtivos(n);
+    for (const it of items) {
+      if (Number(it.cdProduto) === cdProduto) {
+        const vlUnit = num(it.vlUnitario);
+        if (vlUnit == null) continue;
+        const qt = Number(it.qtProduto ?? 0) || 0;
+        const vlDesc = Number(it.vlDesconto ?? 0) || 0;
+        const vlAcr = Number(it.vlAcrescimo ?? 0) || 0;
+        out.push({
+          nota: n,
+          qt,
+          vlUnitario: vlUnit,
+          vlTotal: qt * vlUnit - vlDesc + vlAcr,
+        });
       }
-    } catch {}
+    }
   }
   return out;
 }

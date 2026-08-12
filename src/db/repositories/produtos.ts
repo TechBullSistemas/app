@@ -130,22 +130,64 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
 // pelo COALESCE para não sumirem do catálogo.
 const FILTRO_TIPO_PRODUTO = `COALESCE(id_tipo_produto, 'P') = 'P'`;
 
-export async function listProdutos(search?: string, limit = 100): Promise<ProdutoRow[]> {
+export async function listProdutos(
+  search?: string,
+  limit = 100,
+  holdingId?: number,
+): Promise<ProdutoRow[]> {
   const db = await getDb();
+  const holdingFilter = holdingId != null ? ' AND holding_id = ?' : '';
   if (search && search.trim()) {
     const like = `%${search.trim()}%`;
     return db.getAllAsync<ProdutoRow>(
       `SELECT * FROM produto
        WHERE (descricao LIKE ? OR referencia LIKE ?)
          AND ${FILTRO_TIPO_PRODUTO}
+         ${holdingFilter}
        ORDER BY cd_produto ASC LIMIT ?`,
-      [like, like, limit],
+      holdingId != null ? [like, like, holdingId, limit] : [like, like, limit],
     );
   }
   return db.getAllAsync<ProdutoRow>(
-    `SELECT * FROM produto WHERE ${FILTRO_TIPO_PRODUTO} ORDER BY cd_produto ASC LIMIT ?`,
-    [limit],
+    `SELECT * FROM produto
+     WHERE ${FILTRO_TIPO_PRODUTO}
+       ${holdingFilter}
+     ORDER BY cd_produto ASC LIMIT ?`,
+    holdingId != null ? [holdingId, limit] : [limit],
   );
+}
+
+/** Lista o catálogo limitado aos produtos já vendidos ao cliente. */
+export async function listProdutosVendidos(
+  cdProdutos: number[],
+  holdingId: number,
+  search?: string,
+  limit = 100,
+): Promise<ProdutoRow[]> {
+  if (cdProdutos.length === 0) return [];
+
+  const db = await getDb();
+  const params: (string | number)[] = [holdingId, JSON.stringify(cdProdutos)];
+  let sql = `
+    SELECT p.*
+    FROM produto p
+    WHERE p.holding_id = ?
+      AND ${FILTRO_TIPO_PRODUTO}
+      AND EXISTS (
+        SELECT 1
+        FROM json_each(?) vendidos
+        WHERE CAST(vendidos.value AS INTEGER) = p.cd_produto
+      )`;
+
+  if (search?.trim()) {
+    const like = `%${search.trim()}%`;
+    sql += ' AND (p.descricao LIKE ? OR p.referencia LIKE ?)';
+    params.push(like, like);
+  }
+
+  sql += ' ORDER BY p.cd_produto ASC LIMIT ?';
+  params.push(limit);
+  return db.getAllAsync<ProdutoRow>(sql, params);
 }
 
 /**

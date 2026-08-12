@@ -55,6 +55,7 @@ import {
 } from '@/services/pricing/descontoMaxUsuario';
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { getEmpresaParametros } from '@/db/repositories/parametros';
+import { getUltimasVendasCliente } from '@/db/repositories/notas';
 
 // Forma de pagamento (4 = Crediário) e tipo de venda (1) fixos no app.
 const CD_FORMA_PAGAMENTO_PADRAO = 4;
@@ -66,6 +67,7 @@ interface ItemPedido {
   qt: number;
   vlUnitario: number;
   vlUnitarioOriginal: number; // preço calculado pelo engine (sem edição manual)
+  vlUltimaCompra: number | null; // referência informativa produto × cliente
   qtDisponivel: number | null;
   permiteSaldoNegativo: boolean;
   // Fator de venda do produto (produto.fator_venda): passo e múltiplo quando > 0.
@@ -204,6 +206,39 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [parcelasManuais, setParcelasManuais] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(isEdit);
+  const cdClienteSelecionado = cliente?.cd_cliente ?? null;
+  const holdingIdSelecionado = user?.holdingId ?? null;
+
+  // Atualiza a referência dos itens sempre que o cliente muda. O valor é
+  // apenas informativo e nunca substitui o preço calculado do pedido.
+  useEffect(() => {
+    let alive = true;
+    if (cdClienteSelecionado == null || holdingIdSelecionado == null) {
+      setItens((prev) =>
+        prev.map((item) => ({ ...item, vlUltimaCompra: null })),
+      );
+      return () => {
+        alive = false;
+      };
+    }
+
+    getUltimasVendasCliente(cdClienteSelecionado, holdingIdSelecionado)
+      .then((ultimasVendas) => {
+        if (!alive) return;
+        setItens((prev) =>
+          prev.map((item) => ({
+            ...item,
+            vlUltimaCompra:
+              ultimasVendas.get(item.cdProduto)?.vlUnitario ?? null,
+          })),
+        );
+      })
+      .catch((err) => console.warn('PedidoForm: histórico indisponível', err));
+
+    return () => {
+      alive = false;
+    };
+  }, [cdClienteSelecionado, holdingIdSelecionado]);
 
   // Parâmetros da empresa carregados uma vez para alimentar o motor de
   // precificação. Quando ausentes (backend antigo), o motor não roda e o
@@ -393,6 +428,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                 Number(it.qtProduto || 0) * Number(it.vlUnitario || 0),
             }));
 
+        const ultimasVendas = await getUltimasVendasCliente(
+          row.cd_cliente,
+          row.holding_id,
+        );
         const itensCarregados: ItemPedido[] = [];
         for (const it of rawItens) {
           const prod = await getProdutoById(
@@ -413,6 +452,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             qt: snapQtToFator(Number(it.qt) || 0, fator),
             vlUnitario: vl,
             vlUnitarioOriginal: prod?.vl_venda ?? vl,
+            vlUltimaCompra:
+              ultimasVendas.get(Number(it.cdProduto))?.vlUnitario ?? null,
             qtDisponivel: prod?.qt_disponivel ?? null,
             permiteSaldoNegativo: extractPermiteSaldoNegativo(prod?.raw_json),
             fatorVenda: fator,
@@ -678,7 +719,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     [parcelas],
   );
 
-  function adicionarProduto(p: ProdutoRow) {
+  function adicionarProduto(p: ProdutoRow, vlUltimaCompra: number | null) {
     const exist = itens.find((it) => it.cdProduto === p.cd_produto);
     const permite = extractPermiteSaldoNegativo(p.raw_json);
     const disponivel = p.qt_disponivel ?? null;
@@ -723,6 +764,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           qt: passo,
           vlUnitario: vl,
           vlUnitarioOriginal: vl,
+          vlUltimaCompra,
           qtDisponivel: disponivel,
           permiteSaldoNegativo: permite,
           fatorVenda: fator,
@@ -1490,6 +1532,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                       {it.permiteSaldoNegativo ? ' (permite negativo)' : ''}
                     </Text>
                   )}
+                  {it.vlUltimaCompra != null ? (
+                    <Text style={styles.lastPurchase}>
+                      Última compra: {fmtMoney(it.vlUltimaCompra)}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
               <View style={styles.itemRow}>
@@ -1855,6 +1902,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         visible={prodPickerOpen}
         onClose={() => setProdPickerOpen(false)}
         onSelect={adicionarProduto}
+        cdCliente={cliente?.cd_cliente}
+        holdingId={user!.holdingId}
       />
       <CondicaoPagtoPicker
         visible={condPickerOpen}
@@ -2009,6 +2058,12 @@ const styles = StyleSheet.create({
   value: { color: '#0f172a', fontWeight: '600' },
   placeholder: { color: '#94a3b8' },
   subtle: { color: '#64748b', fontSize: 12, marginTop: 2 },
+  lastPurchase: {
+    color: '#1e3a8a',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   itensHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
