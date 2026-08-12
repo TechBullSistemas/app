@@ -54,6 +54,7 @@ Arquivos-chave:
 1. **Preço base**
    - Se `condicao_preco.id_promocao = 'S'` e há registro válido em `tabela_preco_promocao` (janela `dt_ini..dt_fim`, eventualmente filtrado por `cd_tabela_preco` quando `id_utiliza_promocao_por_tabela_preco = 'S'`):
      `vl_base = tabela_preco_promocao.vl_promocao`.
+     Esse valor é o preço final promocional e não deve ser sobrescrito pela fórmula dinâmica de margem da empresa.
    - Caso contrário: `vl_base = tabela_preco_item.vl_preco` para `(cd_tabela_preco, cd_produto)`.
 
 2. **Crédito de substituição** (opcional)

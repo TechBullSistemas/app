@@ -435,8 +435,10 @@ export async function calcularPrecoUnitario(
   // Passo 8 — Fórmula dinâmica.
   //
   // Gate: a fórmula roda quando `empresa.id_forma_preco_venda_produto = 'M'`
-  // (margem) e há `ds_funcao_calculo_preco_venda` cadastrada. Nos modos 'T'
-  // (tabela de preço) e 'V' (última venda) a fórmula nunca roda.
+  // (margem), há `ds_funcao_calculo_preco_venda` cadastrada e o preço não veio
+  // de uma promoção válida da `tabela_preco_promocao`. A promoção já traz o
+  // valor final de venda e não pode ser substituída pelo cálculo de margem.
+  // Nos modos 'T' (tabela de preço) e 'V' (última venda) a fórmula nunca roda.
   //
   // O `condicao_preco.id_tipo_acrescimo` NÃO gateia a fórmula — ele só decide
   // a fonte da margem usada como input:
@@ -447,10 +449,16 @@ export async function calcularPrecoUnitario(
   //   - 'V'/'N'/sem condição → `v_pr_margem_lucro = tabela_preco_item.pr_margem_lucro`
   //            (margem cadastrada no preço×tabela). O acréscimo direto do tipo
   //            'V' já foi aplicado no Passo 3.
+  const formulaBloqueadaPorPromocaoTabela = promocaoTabelaValida;
   const formulaGateAtende =
-    formaPreco === 'M' && !!empresa.dsFuncaoCalculoPrecoVenda;
+    formaPreco === 'M' &&
+    !!empresa.dsFuncaoCalculoPrecoVenda &&
+    !formulaBloqueadaPorPromocaoTabela;
   let formulaGateMotivo: string | null = null;
-  if (formaPreco === 'T') {
+  if (formulaBloqueadaPorPromocaoTabela) {
+    formulaGateMotivo =
+      'Preço promocional válido em `tabela_preco_promocao` — fórmula dinâmica não aplicada.';
+  } else if (formaPreco === 'T') {
     formulaGateMotivo =
       "id_forma_preco_venda_produto='T' — preço direto da tabela de preço.";
   } else if (formaPreco === 'V') {
