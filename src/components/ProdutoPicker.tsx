@@ -142,7 +142,7 @@ export function ProdutoPicker({
           <View style={styles.searchBox}>
             <TextInput
               style={styles.input}
-              placeholder="Buscar produto..."
+              placeholder="Buscar por código, descrição ou referência"
               value={search}
               onChangeText={setSearch}
               autoCapitalize="none"

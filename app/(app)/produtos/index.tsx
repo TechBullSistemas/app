@@ -44,7 +44,7 @@ export default function ProdutosScreen() {
       <View style={styles.searchBox}>
         <TextInput
           style={styles.input}
-          placeholder="Buscar por descrição ou referência"
+          placeholder="Buscar por código, descrição ou referência"
           value={search}
           onChangeText={setSearch}
           autoCapitalize="none"

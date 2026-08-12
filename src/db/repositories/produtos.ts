@@ -151,11 +151,13 @@ export async function listProdutos(
     const like = `%${search.trim()}%`;
     return db.getAllAsync<ProdutoRow>(
       `SELECT * FROM produto
-       WHERE (descricao LIKE ? OR referencia LIKE ?)
+       WHERE (CAST(cd_produto AS TEXT) LIKE ? OR descricao LIKE ? OR referencia LIKE ?)
          AND ${FILTRO_TIPO_PRODUTO}
          ${holdingFilter}
        ORDER BY cd_produto ASC LIMIT ?`,
-      holdingId != null ? [like, like, holdingId, limit] : [like, like, limit],
+      holdingId != null
+        ? [like, like, like, holdingId, limit]
+        : [like, like, like, limit],
     );
   }
   return db.getAllAsync<ProdutoRow>(
@@ -191,8 +193,9 @@ export async function listProdutosVendidos(
 
   if (search?.trim()) {
     const like = `%${search.trim()}%`;
-    sql += ' AND (p.descricao LIKE ? OR p.referencia LIKE ?)';
-    params.push(like, like);
+    sql +=
+      ' AND (CAST(p.cd_produto AS TEXT) LIKE ? OR p.descricao LIKE ? OR p.referencia LIKE ?)';
+    params.push(like, like, like);
   }
 
   sql += ' ORDER BY p.cd_produto ASC LIMIT ?';
