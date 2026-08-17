@@ -23,6 +23,10 @@ import {
   CondicaoPagtoPicker,
   CondicaoOpt,
 } from '@/components/CondicaoPagtoPicker';
+import {
+  FormaPagamentoPicker,
+  type FormaPagamentoOpt,
+} from '@/components/FormaPagamentoPicker';
 import { CondicaoPrecoPicker } from '@/components/CondicaoPrecoPicker';
 import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
@@ -61,8 +65,9 @@ import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { getEmpresaParametros } from '@/db/repositories/parametros';
 import { getUltimasVendasCliente } from '@/db/repositories/notas';
 
-// Forma de pagamento (4 = Crediário) e tipo de venda (1) fixos no app.
-const CD_FORMA_PAGAMENTO_PADRAO = 4;
+// Crediário permanece como fallback quando o cliente ainda não possui uma
+// forma padrão sincronizada do DUAPI.
+const CD_FORMA_PAGAMENTO_FALLBACK = 4;
 const CD_TIPO_VENDA_PADRAO = 1;
 
 interface ItemPedido {
@@ -184,6 +189,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [cliPickerOpen, setCliPickerOpen] = useState(false);
   const [prodPickerOpen, setProdPickerOpen] = useState(false);
   const [condPickerOpen, setCondPickerOpen] = useState(false);
+  const [formaPickerOpen, setFormaPickerOpen] = useState(false);
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   // Picker de condição de preço aberto para um produto específico (cdProduto).
   const [condPrecoOpenFor, setCondPrecoOpenFor] = useState<number | null>(null);
@@ -206,6 +212,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [dsOrdemCompra, setDsOrdemCompra] = useState('');
 
   const [condicaoSel, setCondicaoSel] = useState<CondicaoOpt | null>(null);
+  const [formaPagamentoSel, setFormaPagamentoSel] =
+    useState<FormaPagamentoOpt | null>(null);
   const [parcelas, setParcelas] = useState<ParcelaEditavel[]>([]);
   const [parcelasManuais, setParcelasManuais] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -302,6 +310,50 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   useEffect(() => {
     setTabelaPrecoManual(null);
   }, [cliente?.cd_cliente]);
+
+  // Ao informar o cliente, usa a forma de pagamento preferencial recebida do
+  // DUAPI. O efeito só depende da troca de cliente; uma escolha manual feita
+  // em seguida permanece intacta.
+  useEffect(() => {
+    if (isEdit) return;
+    if (!cliente || holdingIdSelecionado == null) {
+      setFormaPagamentoSel(null);
+      return;
+    }
+
+    setFormaPagamentoSel(null);
+    let alive = true;
+    (async () => {
+      try {
+        const db = await getDb();
+        const preferred =
+          cliente.cd_forma_pagamento ?? CD_FORMA_PAGAMENTO_FALLBACK;
+        const exact = await db.getFirstAsync<FormaPagamentoOpt>(
+          `SELECT cd_forma, descricao
+             FROM forma_pagamento
+            WHERE cd_forma = ? AND holding_id = ?`,
+          [preferred, holdingIdSelecionado],
+        );
+        const fallback =
+          exact ??
+          (await db.getFirstAsync<FormaPagamentoOpt>(
+            `SELECT cd_forma, descricao
+               FROM forma_pagamento
+              WHERE holding_id = ?
+              ORDER BY cd_forma
+              LIMIT 1`,
+            [holdingIdSelecionado],
+          ));
+        if (alive) setFormaPagamentoSel(fallback ?? null);
+      } catch {
+        if (alive) setFormaPagamentoSel(null);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [cliente?.cd_cliente, holdingIdSelecionado, isEdit]);
 
   // Pré-selecionar a condição de pagamento padrão do cliente (cd_condicao_pagto)
   // ao escolher um cliente em pedidos novos. Em modo edição não sobrescreve a
@@ -478,6 +530,17 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             [payload.cdCondicaoPagto],
           );
           if (cond) setCondicaoSel(cond);
+        }
+
+        if (payload.cdFormaPagamento) {
+          const db = await getDb();
+          const forma = await db.getFirstAsync<FormaPagamentoOpt>(
+            `SELECT cd_forma, descricao
+               FROM forma_pagamento
+              WHERE cd_forma = ? AND holding_id = ?`,
+            [payload.cdFormaPagamento, row.holding_id],
+          );
+          if (forma) setFormaPagamentoSel(forma);
         }
 
         // Restaurar parcelas como editadas (modo manual já que pode ter sido alterado)
@@ -1159,6 +1222,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     }
     if (!condicaoSel)
       return Alert.alert('Atenção', 'Selecione a condição de pagamento.');
+    if (!formaPagamentoSel)
+      return Alert.alert('Atenção', 'Selecione a forma de pagamento.');
     if (!parcelas.length)
       return Alert.alert('Atenção', 'Sem parcelas geradas. Verifique a condição.');
 
@@ -1282,7 +1347,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         dtEmissao,
         dtVencto: `${p.vencimento}T00:00:00.000Z`,
         vlTitulo: p.valor,
-        nrForma: CD_FORMA_PAGAMENTO_PADRAO,
+        nrForma: formaPagamentoSel.cd_forma,
       }));
 
       // Mesmo cálculo do projeto web (calculaTotalVenda):
@@ -1320,7 +1385,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       const vlPrimeiraParcela = parcelas[0]?.valor ?? vlTotalSalvar;
       const prevendaFormaPagamento = [
         {
-          idFormaPagamento: CD_FORMA_PAGAMENTO_PADRAO,
+          idFormaPagamento: formaPagamentoSel.cd_forma,
           nrParcela: parcelas.length || 1,
           vlParcela: vlPrimeiraParcela,
           vlTotal: vlTotalSalvar,
@@ -1333,7 +1398,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         cdCliente: cliente.cd_cliente,
         cdCondicaoPagto: condicaoSel.cd_condicao,
         cdTipoVenda: CD_TIPO_VENDA_PADRAO,
-        cdFormaPagamento: CD_FORMA_PAGAMENTO_PADRAO,
+        cdFormaPagamento: formaPagamentoSel.cd_forma,
         dtEmissao,
         obs: obs.trim() || undefined,
         dsOrdemCompra: dsOrdemCompra.trim()
@@ -1360,6 +1425,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
       const displayPayload = {
         condicaoLabel: condicaoSel.descricao,
+        formaPagamentoLabel: formaPagamentoSel.descricao,
         observacao: obs.trim() || null,
         dsOrdemCompra: dsOrdemCompra.trim()
           ? dsOrdemCompra.trim().slice(0, 65)
@@ -1415,7 +1481,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             data: new Date(dtEmissao).toLocaleString('pt-BR'),
             itens: displayPayload.itens,
             vlTotal: totalComAjuste,
-            formaPagamento: condicaoSel.descricao,
+            formaPagamento: formaPagamentoSel.descricao,
             parcelas: displayPayload.parcelas,
             observacao: displayPayload.observacao,
           });
@@ -1697,6 +1763,23 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         </View>
       </Pressable>
 
+      <Text style={styles.label}>Forma de pagamento</Text>
+      <Pressable style={styles.field} onPress={() => setFormaPickerOpen(true)}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text
+            style={[
+              { flex: 1 },
+              formaPagamentoSel ? styles.value : styles.placeholder,
+            ]}
+          >
+            {formaPagamentoSel
+              ? `#${formaPagamentoSel.cd_forma} • ${formaPagamentoSel.descricao}`
+              : 'Selecionar forma...'}
+          </Text>
+          <Ionicons name="chevron-forward" size={20} color="#64748b" />
+        </View>
+      </Pressable>
+
       {parcelas.length > 0 && (
         <View style={styles.card}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -1924,6 +2007,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           setParcelasManuais(false);
         }}
         selectedId={condicaoSel?.cd_condicao ?? null}
+      />
+      <FormaPagamentoPicker
+        visible={formaPickerOpen}
+        holdingId={user!.holdingId}
+        onClose={() => setFormaPickerOpen(false)}
+        onSelect={setFormaPagamentoSel}
+        selectedId={formaPagamentoSel?.cd_forma ?? null}
       />
       <TabelaPrecoPicker
         visible={tabPickerOpen}

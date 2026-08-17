@@ -273,6 +273,7 @@ CREATE TABLE IF NOT EXISTS prevenda_item (
   vl_unitario REAL,
   vl_desconto REAL,
   vl_acrescimo REAL,
+  cd_condicao_preco INTEGER,
   ds_produto TEXT,
   ds_unidade TEXT,
   PRIMARY KEY (nr_prevenda, cd_empresa, holding_id, cd_produto)
@@ -516,6 +517,14 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     'cd_condicao_pagto',
     'cd_condicao_pagto INTEGER',
   );
+  // Cliente: forma de pagamento padrão vinda do DUAPI. O pedido a utiliza
+  // como pré-seleção, mas o vendedor continua podendo trocá-la no app.
+  await ensureColumn(
+    db,
+    'cliente',
+    'cd_forma_pagamento',
+    'cd_forma_pagamento INTEGER',
+  );
   // Cliente: tipo de cliente para venda (C=consumo, I=indústria, R=revenda).
   // Utilizado pelo motor para escolher a alíquota de ICMS interno correta
   // em `imposto_uf` (pr_icms_interno_revenda / pr_icms_interno_industria).
@@ -690,6 +699,13 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
 
   // Pré-venda: ordem de compra do cliente (sync ERP / Duapi).
   await ensureColumn(db, 'prevenda', 'ds_ordem_compra', 'ds_ordem_compra TEXT');
+  // Condição de preço escolhida por linha do pedido e devolvida pelo ERP.
+  await ensureColumn(
+    db,
+    'prevenda_item',
+    'cd_condicao_preco',
+    'cd_condicao_preco INTEGER',
+  );
 
   // CondicaoPreco: caso especial "última venda".
   await ensureColumn(

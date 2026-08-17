@@ -22,6 +22,7 @@ export interface ClienteRow {
   raw_json: string | null;
   cd_tabela_preco?: number | null;
   cd_condicao_pagto?: number | null;
+  cd_forma_pagamento?: number | null;
   tp_cliente_venda?: 'C' | 'I' | 'R' | string | null;
   client_id?: string | null;
   origem?: 'remoto' | 'local' | null;
@@ -119,6 +120,17 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
             `UPDATE cliente SET cd_condicao_pagto = ?
               WHERE cd_cliente = ? AND holding_id = ?`,
             [Number(it.cdCondicaoPagto), it.cdCliente, holdingId],
+          );
+        } catch {
+          // ignora se a coluna ainda não existe
+        }
+      }
+      if (it.cdFormaPagamento != null) {
+        try {
+          await db.runAsync(
+            `UPDATE cliente SET cd_forma_pagamento = ?
+              WHERE cd_cliente = ? AND holding_id = ?`,
+            [Number(it.cdFormaPagamento), it.cdCliente, holdingId],
           );
         } catch {
           // ignora se a coluna ainda não existe

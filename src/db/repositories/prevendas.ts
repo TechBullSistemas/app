@@ -32,6 +32,7 @@ export interface PrevendaItemRow {
   vl_unitario: number | null;
   vl_desconto: number | null;
   vl_acrescimo: number | null;
+  cd_condicao_preco: number | null;
   ds_produto: string | null;
   ds_unidade: string | null;
 }
@@ -109,8 +110,8 @@ async function upsertPrevendaRow(
     await db.runAsync(
       `INSERT OR REPLACE INTO prevenda_item
        (nr_prevenda, cd_empresa, holding_id, cd_produto, qt_produto, vl_unitario,
-        vl_desconto, vl_acrescimo, ds_produto, ds_unidade)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        vl_desconto, vl_acrescimo, cd_condicao_preco, ds_produto, ds_unidade)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         nrPrevenda,
         cdEmpresa,
@@ -120,6 +121,7 @@ async function upsertPrevendaRow(
         vlUnit,
         num(item.vlDesconto) ?? 0,
         num(item.vlAcrescimo) ?? 0,
+        item.cdCondicaoPreco != null ? Number(item.cdCondicaoPreco) : null,
         item.dsProduto ?? item.produto?.dsProduto ?? null,
         item.dsUnidade ?? item.produto?.unidade?.dsUnidade ?? null,
       ],
