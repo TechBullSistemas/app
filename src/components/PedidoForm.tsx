@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -64,6 +64,12 @@ import {
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { getEmpresaParametros } from '@/db/repositories/parametros';
 import { getUltimasVendasCliente } from '@/db/repositories/notas';
+import {
+  distribuirValoresParcelas,
+  garantirSomaParcelas,
+  recalcularParcelasNoTotal,
+  redistribuirParcelasAposEdicao,
+} from '@/utils/parcelas';
 
 // Crediário permanece como fallback quando o cliente ainda não possui uma
 // forma padrão sincronizada do DUAPI.
@@ -753,6 +759,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     return round2(total * fator);
   }, [total, condicaoConfig]);
 
+  const totalComAjusteAnteriorRef = useRef(totalComAjuste);
+
   // Regenerar parcelas quando condição/itens/total mudar (apenas em modo automático)
   useEffect(() => {
     if (parcelasManuais) return;
@@ -762,29 +770,30 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       return;
     }
     const qt = cfg.length;
-    const base = round2(totalComAjuste / qt);
+    const valores = distribuirValoresParcelas(totalComAjuste, qt);
     const out: ParcelaEditavel[] = [];
-    let acumulado = 0;
     const hoje = new Date();
     for (let i = 0; i < qt; i++) {
-      const valor =
-        i === qt - 1 ? round2(totalComAjuste - acumulado) : base;
-      acumulado += valor;
       const venc = new Date(hoje);
       venc.setUTCDate(venc.getUTCDate() + cfg[i].nrDias);
       out.push({
         numero: cfg[i].nrParcela,
         vencimento: dateToYmd(venc),
-        valor,
+        valor: valores[i] ?? 0,
       });
     }
     setParcelas(out);
   }, [condicaoConfig, totalComAjuste, parcelasManuais]);
 
-  const totalParcelas = useMemo(
-    () => round2(parcelas.reduce((a, p) => a + p.valor, 0)),
-    [parcelas],
-  );
+  // Se itens/preços alterarem o total depois de uma edição manual, preserva
+  // os vencimentos, mas recalcula os valores. A soma nunca pode ficar obsoleta.
+  useEffect(() => {
+    const totalAnterior = totalComAjusteAnteriorRef.current;
+    totalComAjusteAnteriorRef.current = totalComAjuste;
+    if (!parcelasManuais || totalAnterior === totalComAjuste) return;
+
+    setParcelas((prev) => recalcularParcelasNoTotal(prev, totalComAjuste));
+  }, [parcelasManuais, totalComAjuste]);
 
   function adicionarProduto(p: ProdutoRow, vlUltimaCompra: number | null) {
     const exist = itens.find((it) => it.cdProduto === p.cd_produto);
@@ -1113,10 +1122,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     setItens((prev) => prev.filter((it) => it.cdProduto !== cdProduto));
   }
 
-  // Redistribui valores: se a parcela alterada NÃO for a última, ajusta as
-  // de baixo. Se for a última, ajusta as de cima. O total final permanece
-  // sempre = totalComAjuste, com a diferença de centavos absorvida pela
-  // última parcela ajustada (para evitar arredondamento "espalhado").
+  // O valor editado é limitado ao total disponível e o saldo é redistribuído
+  // entre as demais parcelas. Parcela única sempre volta ao total do pedido.
   function alterarParcelaValor(numero: number, novoValor: number) {
     setParcelasManuais(true);
     setParcelas((prev) => {
@@ -1124,41 +1131,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       const idx = prev.findIndex((p) => p.numero === numero);
       if (idx < 0) return prev;
 
-      const valor = isFinite(novoValor) && novoValor >= 0 ? novoValor : 0;
-      const next = prev.map((p) => ({ ...p }));
-      next[idx] = { ...next[idx], valor, manual: true };
-
-      const isUltima = idx === next.length - 1;
-      if (isUltima) {
-        // Recalcula as de cima (índices 0..idx-1).
-        const restante = round2(totalComAjuste - valor);
-        const antes = next.slice(0, idx).length;
-        if (antes > 0) {
-          const base = round2(restante / antes);
-          let acumulado = 0;
-          for (let i = 0; i < idx; i++) {
-            const v = i === idx - 1 ? round2(restante - acumulado) : base;
-            acumulado += v;
-            next[i] = { ...next[i], valor: v };
-          }
-        }
-      } else {
-        // Recalcula as de baixo (idx+1..N-1).
-        const somaAntes = next.slice(0, idx + 1).reduce((a, p) => a + p.valor, 0);
-        const restante = round2(totalComAjuste - somaAntes);
-        const depois = next.length - (idx + 1);
-        if (depois > 0) {
-          const base = round2(restante / depois);
-          let acumulado = 0;
-          for (let i = idx + 1; i < next.length; i++) {
-            const v =
-              i === next.length - 1 ? round2(restante - acumulado) : base;
-            acumulado += v;
-            next[i] = { ...next[i], valor: v };
-          }
-        }
-      }
-      return next;
+      return redistribuirParcelasAposEdicao(
+        prev.map((p, indice) =>
+          indice === idx ? { ...p, manual: true } : p,
+        ),
+        idx,
+        isFinite(novoValor) && novoValor >= 0 ? novoValor : 0,
+        totalComAjuste,
+      );
     });
   }
 
@@ -1301,27 +1281,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       }
     }
 
-    const diff = round2(totalParcelas - totalComAjuste);
-    if (Math.abs(diff) > 0.01) {
-      const ok = await new Promise<boolean>((resolve) => {
-        Alert.alert(
-          'Parcelas divergentes',
-          `Soma das parcelas (${fmtMoney(totalParcelas)}) difere do total (${fmtMoney(
-            totalComAjuste,
-          )}). Deseja continuar mesmo assim?`,
-          [
-            { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Continuar', onPress: () => resolve(true) },
-          ],
-        );
-      });
-      if (!ok) return;
-    }
-
     setSalvando(true);
     try {
       const cId = clientId || uuidv4();
       const dtEmissao = new Date().toISOString();
+      const parcelasSalvar = garantirSomaParcelas(parcelas, totalComAjuste);
 
       const prevendaItem = itensNorm.map((it) => ({
         cdProduto: it.cdProduto,
@@ -1342,7 +1306,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         vlFlex: it.pricing?.vlFlex ?? 0,
       }));
 
-      const prevendaTitulo = parcelas.map((p) => ({
+      const prevendaTitulo = parcelasSalvar.map((p) => ({
         nrParcela: p.numero,
         dtEmissao,
         dtVencto: `${p.vencimento}T00:00:00.000Z`,
@@ -1353,13 +1317,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       // Mesmo cálculo do projeto web (calculaTotalVenda):
       //   vlBruto = soma_itens - vlDescontoTotal
       //   vlTotal = vlBruto + vlAcrescimoTotal
-      // Respeita edição manual de parcelas (soma das parcelas como total final)
-      const vlFinal = parcelasManuais
-        ? round2(totalParcelas)
-        : round2(totalComAjuste);
-      const diffAjuste = round2(vlFinal - total);
-      const vlAcrescimoTotal = diffAjuste > 0 ? diffAjuste : 0;
-      const vlDescontoTotal = diffAjuste < 0 ? -diffAjuste : 0;
+      // O total dos títulos é sempre consequência do total do pedido. Edições
+      // manuais apenas redistribuem parcelas; nunca criam acréscimo financeiro.
+      const vlAcrescimoTotal = 0;
+      const vlDescontoTotal = Math.max(0, round2(total - totalComAjuste));
       // vl_bruto também passa a refletir o valor já com acréscimo somado
       // (e desconto subtraído), conforme regra do projeto.
       const vlTotalSalvar = round2(total - vlDescontoTotal + vlAcrescimoTotal);
@@ -1367,14 +1328,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
       // Percentuais: o desconto prioriza o cadastro da condição. O acréscimo
       // da condição de pagamento NÃO gera ajuste no total (entra no preço
-      // unitário via fórmula); só existe vlAcrescimoTotal quando o usuário
-      // editou parcelas manualmente acima do total — nesse caso recalcula o %
-      // efetivo para manter o registro consistente.
+      // unitário via fórmula). A edição de parcelas também não gera acréscimo.
       const prDescontoCfg = condicaoConfig.prDesconto || 0;
-      const prAcrescimo =
-        vlAcrescimoTotal > 0 && vlBrutoSalvar > 0
-          ? round2((vlAcrescimoTotal / vlBrutoSalvar) * 100)
-          : 0;
+      const prAcrescimo = 0;
       const prDesconto =
         vlDescontoTotal > 0 && total > 0
           ? round2((vlDescontoTotal / total) * 100)
@@ -1382,11 +1338,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
       // PrevendaFormaPagamento: PK = (holding, empresa, prevenda, idFormaPagamento)
       // → uma linha POR FORMA (não por parcela). Mesma regra do projeto web.
-      const vlPrimeiraParcela = parcelas[0]?.valor ?? vlTotalSalvar;
+      const vlPrimeiraParcela = parcelasSalvar[0]?.valor ?? vlTotalSalvar;
       const prevendaFormaPagamento = [
         {
           idFormaPagamento: formaPagamentoSel.cd_forma,
-          nrParcela: parcelas.length || 1,
+          nrParcela: parcelasSalvar.length || 1,
           vlParcela: vlPrimeiraParcela,
           vlTotal: vlTotalSalvar,
           vlFormaOriginal: vlTotalSalvar,
@@ -1440,7 +1396,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           condicaoPrecoLabel: it.condicaoPrecoLabel ?? null,
           vlMinimo: it.vlMinimo ?? null,
         })),
-        parcelas: parcelas.map((p) => ({
+        parcelas: parcelasSalvar.map((p) => ({
           numero: p.numero,
           vencimento: p.vencimento,
           valor: p.valor,
@@ -1873,12 +1829,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
               </View>
             </View>
           ))}
-          {Math.abs(totalParcelas - totalComAjuste) > 0.01 && (
-            <Text style={styles.warn}>
-              Soma das parcelas: {fmtMoney(totalParcelas)} (difere do total{' '}
-              {fmtMoney(totalComAjuste)})
-            </Text>
-          )}
+          <Text style={styles.subtle}>
+            A soma das parcelas é recalculada automaticamente para fechar o total.
+          </Text>
         </View>
       )}
 
