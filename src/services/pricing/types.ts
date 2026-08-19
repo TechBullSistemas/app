@@ -142,6 +142,9 @@ export interface ContextoCalculoItem {
   impostoUfEmpresa?: ImpostoUfEngine | null;
   prIcmsTabela?: number | null; // de tabela_icms (origem×destino)
   custoVariaveis?: Record<string, number>;
+  // Percentual específico da empresa×produto, vindo de produto_seguranca.
+  // Sobrescreve o placeholder zerado de produto_custo_variavel na fórmula.
+  prMargemSeguranca?: number | null;
   // Forma de preço 'V': último unitário praticado do produto para o cliente
   // (resolvido pelo orquestrador a cada item; null = primeira venda).
   vlUltimaVendaProduto?: number | null;

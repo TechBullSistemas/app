@@ -20,6 +20,7 @@ import { bulkInsertTabelaIcms } from '@/db/repositories/tabelaIcms';
 import { bulkInsertTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { bulkInsertTabelaPrecoPromocao } from '@/db/repositories/tabelaPrecoPromocao';
 import { bulkInsertProdutoDesconto } from '@/db/repositories/produtoDesconto';
+import { bulkInsertProdutoSeguranca } from '@/db/repositories/produtoSeguranca';
 import { bulkInsertCondicaoPagtoPreco } from '@/db/repositories/condicaoPagtoPreco';
 import { bulkInsertProdutoCustoVariavel } from '@/db/repositories/parametros';
 import { bulkInsertEmpresas } from '@/db/repositories/empresas';
@@ -59,6 +60,7 @@ export const SYNC_ENTITIES: SyncEntityDef[] = [
   { key: 'tabela-preco-item', endpoint: 'tabela-preco-item', label: 'Itens de Tabela de Preço', paged: true, insertFn: bulkInsertTabelaPrecoItem },
   { key: 'tabela-preco-promocao', endpoint: 'tabela-preco-promocao', label: 'Promoções de Tabela de Preço', paged: true, insertFn: bulkInsertTabelaPrecoPromocao },
   { key: 'produto-desconto', endpoint: 'produto-desconto', label: 'Faixas de Desconto por Produto', paged: true, insertFn: bulkInsertProdutoDesconto },
+  { key: 'produto-seguranca', endpoint: 'produto-seguranca', label: 'Margens de Segurança por Produto', paged: false, insertFn: bulkInsertProdutoSeguranca },
   { key: 'condicao-pagto-preco', endpoint: 'condicao-pagto-preco', label: 'Acréscimos por Cond. Pagto/Preço', paged: false, insertFn: bulkInsertCondicaoPagtoPreco },
   { key: 'produto-custo-variavel', endpoint: 'produto-custo-variavel', label: 'Custos Variáveis (Fórmula)', paged: false, insertFn: bulkInsertProdutoCustoVariavel },
 ];

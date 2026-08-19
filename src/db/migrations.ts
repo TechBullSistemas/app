@@ -426,6 +426,16 @@ CREATE TABLE IF NOT EXISTS produto_desconto (
 );
 CREATE INDEX IF NOT EXISTS idx_pd_produto ON produto_desconto(cd_produto, holding_id);
 
+CREATE TABLE IF NOT EXISTS produto_seguranca (
+  cd_empresa INTEGER NOT NULL,
+  cd_produto INTEGER NOT NULL,
+  holding_id INTEGER NOT NULL,
+  pr_margem_seguranca REAL DEFAULT 0,
+  PRIMARY KEY (cd_empresa, cd_produto, holding_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ps_produto
+  ON produto_seguranca(cd_produto, holding_id);
+
 CREATE TABLE IF NOT EXISTS condicao_pagto_preco (
   cd_condicao_pagto INTEGER NOT NULL,
   cd_tabela_preco_condicao INTEGER NOT NULL,
@@ -876,6 +886,7 @@ const TABLES = [
   'tabela_preco_item',
   'tabela_preco_promocao',
   'produto_desconto',
+  'produto_seguranca',
   'condicao_pagto_preco',
   'representante_saldo_flex',
   'usuario_tabela_preco',

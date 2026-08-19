@@ -487,6 +487,9 @@ export async function calcularPrecoUnitario(
       // com pr_variavel = 0 — se o spread viesse por último, esses zeros
       // sobrescreveriam os valores reais e quebrariam a fórmula.
       ...(contexto.custoVariaveis ?? {}),
+      // Percentual específico da empresa×produto. Precisa vir depois dos
+      // placeholders de produto_custo_variavel para sobrescrever o zero.
+      v_pr_margem_seguranca: safeNumber(contexto.prMargemSeguranca),
       v_vl_venda: safeNumber(precoTabela?.vlVenda),
       v_vl_promocao: vlPromocaoAplicavel,
       v_vl_custo: safeNumber(precoTabela?.vlCusto),

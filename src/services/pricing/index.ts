@@ -33,6 +33,7 @@ import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { findTabelaPrecoPromocao } from '@/db/repositories/tabelaPrecoPromocao';
 import { listCustoVariavel } from '@/db/repositories/parametros';
 import { getUltimaVendaProdutoCliente } from '@/db/repositories/notas';
+import { findProdutoSeguranca } from '@/db/repositories/produtoSeguranca';
 
 function mapImpostoUfRow(r: any): ImpostoUfEngine {
   return {
@@ -274,6 +275,28 @@ export async function calcularItem(
       // Tabela ainda não sincronizada → fórmula segue com variáveis em zero.
     }
     contexto.custoVariaveis = vars;
+  }
+
+  // Margem de segurança é específica por empresa×produto. No cadastro de
+  // variáveis da fórmula ela aparece como placeholder zerado; o DUAPI resolve
+  // o percentual real na tabela produto_seguranca.
+  contexto.prMargemSeguranca = 0;
+  if (
+    empresa.idFormaPrecoVendaProduto === 'M' &&
+    empresa.dsFuncaoCalculoPrecoVenda
+  ) {
+    try {
+      const seguranca = await findProdutoSeguranca(
+        empresa.cdEmpresa,
+        produto.cdProduto,
+        holdingId,
+      );
+      contexto.prMargemSeguranca = Number(
+        seguranca?.pr_margem_seguranca ?? 0,
+      );
+    } catch {
+      // Tabela ainda não sincronizada → mantém o comportamento anterior.
+    }
   }
 
   // Forma de preço 'V' (id_forma_preco_venda_produto): último unitário
