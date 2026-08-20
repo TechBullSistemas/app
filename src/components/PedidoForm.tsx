@@ -1719,22 +1719,29 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         </View>
       </Pressable>
 
-      <Text style={styles.label}>Forma de pagamento</Text>
-      <Pressable style={styles.field} onPress={() => setFormaPickerOpen(true)}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text
-            style={[
-              { flex: 1 },
-              formaPagamentoSel ? styles.value : styles.placeholder,
-            ]}
+      {empresaParams?.idPermiteAlterarFormaPagamentoApp === true && (
+        <>
+          <Text style={styles.label}>Forma de pagamento</Text>
+          <Pressable
+            style={styles.field}
+            onPress={() => setFormaPickerOpen(true)}
           >
-            {formaPagamentoSel
-              ? `#${formaPagamentoSel.cd_forma} • ${formaPagamentoSel.descricao}`
-              : 'Selecionar forma...'}
-          </Text>
-          <Ionicons name="chevron-forward" size={20} color="#64748b" />
-        </View>
-      </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text
+                style={[
+                  { flex: 1 },
+                  formaPagamentoSel ? styles.value : styles.placeholder,
+                ]}
+              >
+                {formaPagamentoSel
+                  ? `#${formaPagamentoSel.cd_forma} • ${formaPagamentoSel.descricao}`
+                  : 'Selecionar forma...'}
+              </Text>
+              <Ionicons name="chevron-forward" size={20} color="#64748b" />
+            </View>
+          </Pressable>
+        </>
+      )}
 
       {parcelas.length > 0 && (
         <View style={styles.card}>
@@ -1961,13 +1968,15 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         }}
         selectedId={condicaoSel?.cd_condicao ?? null}
       />
-      <FormaPagamentoPicker
-        visible={formaPickerOpen}
-        holdingId={user!.holdingId}
-        onClose={() => setFormaPickerOpen(false)}
-        onSelect={setFormaPagamentoSel}
-        selectedId={formaPagamentoSel?.cd_forma ?? null}
-      />
+      {empresaParams?.idPermiteAlterarFormaPagamentoApp === true && (
+        <FormaPagamentoPicker
+          visible={formaPickerOpen}
+          holdingId={user!.holdingId}
+          onClose={() => setFormaPickerOpen(false)}
+          onSelect={setFormaPagamentoSel}
+          selectedId={formaPagamentoSel?.cd_forma ?? null}
+        />
+      )}
       <TabelaPrecoPicker
         visible={tabPickerOpen}
         onClose={() => setTabPickerOpen(false)}

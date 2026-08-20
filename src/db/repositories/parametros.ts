@@ -31,6 +31,7 @@ export interface EmpresaParametros {
   idIgnoraTabelaPrecoClienteTablet: 'S' | 'N';
   idAlteraTabelaPrecoTablet: 'S' | 'N';
   idPermiteAlterarValorProdutoPalm: 'S' | 'A' | 'N';
+  idPermiteAlterarFormaPagamentoApp: boolean;
   // Fórmula dinâmica
   dsFuncaoCalculoPrecoVenda: string | null;
   dsFuncaoCalculoMargemLucro: string | null;
@@ -68,6 +69,7 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   idIgnoraTabelaPrecoClienteTablet: 'N',
   idAlteraTabelaPrecoTablet: 'N',
   idPermiteAlterarValorProdutoPalm: 'S',
+  idPermiteAlterarFormaPagamentoApp: true,
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
   idCustoAgregado: 'N',
@@ -182,6 +184,8 @@ export async function getEmpresaParametros(
       row.id_permite_alterar_valor_produto_palm,
       DEFAULTS.idPermiteAlterarValorProdutoPalm,
     ),
+    idPermiteAlterarFormaPagamentoApp:
+      row.id_permite_alterar_forma_pagamento_app !== 0,
     dsFuncaoCalculoPrecoVenda: s(
       row.ds_funcao_calculo_preco_venda,
       DEFAULTS.dsFuncaoCalculoPrecoVenda,

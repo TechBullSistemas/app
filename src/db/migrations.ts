@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS empresa (
   cnpj TEXT,
   logo_url TEXT,
   logo_local TEXT,
+  id_permite_alterar_forma_pagamento_app INTEGER DEFAULT 1,
   PRIMARY KEY (cd_empresa, holding_id)
 );
 
@@ -579,6 +580,12 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   // Empresa: flags do motor de precificação + UF + fórmulas dinâmicas.
   await ensureColumn(db, 'empresa', 'logo_url', 'logo_url TEXT');
   await ensureColumn(db, 'empresa', 'logo_local', 'logo_local TEXT');
+  await ensureColumn(
+    db,
+    'empresa',
+    'id_permite_alterar_forma_pagamento_app',
+    'id_permite_alterar_forma_pagamento_app INTEGER DEFAULT 1',
+  );
   await ensureColumn(db, 'empresa', 'cd_estado', 'cd_estado TEXT');
   await ensureColumn(
     db,
