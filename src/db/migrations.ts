@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS empresa (
   logo_url TEXT,
   logo_local TEXT,
   id_permite_alterar_forma_pagamento_app INTEGER DEFAULT 1,
+  id_data_sincronizacao_venda_app INTEGER DEFAULT 0,
   PRIMARY KEY (cd_empresa, holding_id)
 );
 
@@ -585,6 +586,12 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     'empresa',
     'id_permite_alterar_forma_pagamento_app',
     'id_permite_alterar_forma_pagamento_app INTEGER DEFAULT 1',
+  );
+  await ensureColumn(
+    db,
+    'empresa',
+    'id_data_sincronizacao_venda_app',
+    'id_data_sincronizacao_venda_app INTEGER DEFAULT 0',
   );
   await ensureColumn(db, 'empresa', 'cd_estado', 'cd_estado TEXT');
   await ensureColumn(

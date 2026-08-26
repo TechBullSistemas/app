@@ -9,6 +9,7 @@ export interface EmpresaRow {
   cnpj: string | null;
   logo_url: string | null;
   logo_local: string | null;
+  id_data_sincronizacao_venda_app?: number | null;
 }
 
 function empresaKey(cdEmpresa: number, holdingId: number) {

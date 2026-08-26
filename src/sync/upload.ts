@@ -26,8 +26,10 @@ import {
 } from '@/db/repositories/clientes';
 import { deleteVisitaLocal } from '@/db/repositories/visitas';
 import { upsertPrevendaFromUpload } from '@/db/repositories/prevendas';
+import { getEmpresaParametros } from '@/db/repositories/parametros';
 import { useSyncStore, UploadItemProgress } from '@/stores/sync';
 import { useSessionStore } from '@/stores/session';
+import { aplicarDataSincronizacaoVenda } from './dataEmissaoVenda';
 
 export interface UploadSyncResult {
   clientes: number;
@@ -231,9 +233,18 @@ export async function runUploadSync(
       try {
         const fullPayload = JSON.parse(v.payload);
         const { __display: display, ...payload } = fullPayload;
+        const empresaParametros = await getEmpresaParametros(
+          v.cd_empresa,
+          v.holding_id,
+        );
+        const payloadEnvio = aplicarDataSincronizacaoVenda(
+          payload,
+          empresaParametros.idDataSincronizacaoVendaApp,
+          new Date().toISOString(),
+        );
         const { data } = await api.post(
           '/upload/venda',
-          { clientId: v.client_id, ...payload },
+          { clientId: v.client_id, ...payloadEnvio },
           uploadConfig,
         );
         const prevenda = data?.prevenda ?? null;
@@ -255,7 +266,7 @@ export async function runUploadSync(
                   prevenda.dsFormaPagamento ??
                   prevenda.formaPagamento?.dsFormaPagamento ??
                   null,
-                prevendaItem: (prevenda.prevendaItem ?? payload.prevendaItem ?? []).map(
+                prevendaItem: (prevenda.prevendaItem ?? payloadEnvio.prevendaItem ?? []).map(
                   (it: any, idx: number) => ({
                     ...it,
                     dsProduto:
@@ -265,10 +276,10 @@ export async function runUploadSync(
                   }),
                 ),
                 prevendaTitulo:
-                  prevenda.prevendaTitulo ?? payload.prevendaTitulo ?? [],
+                  prevenda.prevendaTitulo ?? payloadEnvio.prevendaTitulo ?? [],
                 prevendaFormaPagamento:
                   prevenda.prevendaFormaPagamento ??
-                  payload.prevendaFormaPagamento ??
+                  payloadEnvio.prevendaFormaPagamento ??
                   [],
               },
               v.holding_id,

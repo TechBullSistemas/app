@@ -24,6 +24,10 @@ const MAPS: Record<string, MapDef> = {
         from: 'idPermiteAlterarFormaPagamentoApp',
         to: 'id_permite_alterar_forma_pagamento_app',
       },
+      {
+        from: 'idDataSincronizacaoVendaApp',
+        to: 'id_data_sincronizacao_venda_app',
+      },
       { from: 'cdEstado', to: 'cd_estado' },
       { from: 'cdTabelaPrecoPadrao', to: 'cd_tabela_preco_padrao' },
       { from: 'idDestacaIpi', to: 'id_destaca_ipi' },
