@@ -273,6 +273,7 @@ CREATE TABLE IF NOT EXISTS prevenda_item (
   cd_produto INTEGER NOT NULL,
   qt_produto REAL,
   vl_unitario REAL,
+  vl_preco_original REAL,
   vl_desconto REAL,
   vl_acrescimo REAL,
   cd_condicao_preco INTEGER,
@@ -518,6 +519,14 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   );
   await db.execAsync(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_cliente_client_id ON cliente(client_id) WHERE client_id IS NOT NULL;`,
+  );
+
+  // Preserva o preço calculado no momento do pedido antes da edição manual.
+  await ensureColumn(
+    db,
+    'prevenda_item',
+    'vl_preco_original',
+    'vl_preco_original REAL',
   );
 
   // Cliente: tabela de preço preferencial usada pelo motor de precificação.

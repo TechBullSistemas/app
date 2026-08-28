@@ -486,6 +486,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
               descricao: `Produto #${it.cdProduto}`,
               qt: Number(it.qtProduto) || 0,
               vlUnitario: Number(it.vlUnitario) || 0,
+              vlPrecoOriginal:
+                it.vlPrecoOriginal == null
+                  ? undefined
+                  : Number(it.vlPrecoOriginal),
               vlTotal:
                 Number(it.qtProduto || 0) * Number(it.vlUnitario || 0),
             }));
@@ -513,7 +517,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             descricao: it.descricao || prod?.descricao || `Produto #${it.cdProduto}`,
             qt: snapQtToFator(Number(it.qt) || 0, fator),
             vlUnitario: vl,
-            vlUnitarioOriginal: prod?.vl_venda ?? vl,
+            vlUnitarioOriginal:
+              it.vlUnitarioOriginal != null || it.vlPrecoOriginal != null
+                ? Number(it.vlUnitarioOriginal ?? it.vlPrecoOriginal)
+                : (prod?.vl_venda ?? vl),
             vlUltimaCompra:
               ultimasVendas.get(Number(it.cdProduto))?.vlUnitario ?? null,
             qtDisponivel: prod?.qt_disponivel ?? null,
@@ -1292,6 +1299,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         qtProduto: it.qt,
         vlCusto: 0,
         vlUnitario: it.vlUnitario,
+        // Fotografia do preço calculado antes de qualquer edição manual.
+        // Não deve ser reconstruído pela tabela no servidor, pois ela pode
+        // mudar depois que o pedido for salvo.
+        vlPrecoOriginal: it.vlUnitarioOriginal,
         vlDesconto: 0,
         prComissao: it.pricing?.prComissao ?? 0,
         vlAcrescimo: 0,
@@ -1391,6 +1402,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           descricao: it.descricao,
           qt: it.qt,
           vlUnitario: it.vlUnitario,
+          vlUnitarioOriginal: it.vlUnitarioOriginal,
           vlTotal: round2(it.qt * it.vlUnitario),
           cdCondicaoPreco: it.cdCondicaoPreco ?? null,
           condicaoPrecoLabel: it.condicaoPrecoLabel ?? null,
