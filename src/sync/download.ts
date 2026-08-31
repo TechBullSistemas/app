@@ -6,6 +6,8 @@ import { SYNC_ENTITIES, SYNC_ENTITY_KEYS, SyncEntityDef } from './entities';
 import { useSyncStore } from '@/stores/sync';
 import { useSessionStore } from '@/stores/session';
 import { downloadPendingCompanyLogos } from '@/services/companyLogoCache';
+import { getEmpresaParametros } from '@/db/repositories/parametros';
+import { podeSincronizarProduto } from './produtoLiberadoInternet';
 
 const PAGE_SIZE = 500;
 
@@ -63,6 +65,13 @@ async function syncEntity(
     let cursor: string | null = null;
     let total = 0;
     let downloaded = 0;
+    // Empresas são baixadas antes do catálogo. A API aplica o mesmo filtro;
+    // a checagem local protege a gravação durante atualizações desencontradas.
+    const verificaLiberadoInternet =
+      entity.key === 'produto' && cdEmpresa != null && holdingIdFallback != null
+        ? (await getEmpresaParametros(cdEmpresa, holdingIdFallback))
+            .idVerificaTambemColunaLiberadoInternet
+        : false;
 
     do {
       const params: Record<string, any> = {};
@@ -73,8 +82,8 @@ async function syncEntity(
       if (downloaded === 0) {
         params.withTotal = 1;
       }
-      // Produto usa a empresa para filtrar o saldo e promoções são cadastradas
-      // por empresa no DUAPI.
+      // Produto usa a empresa para filtrar saldo e liberação para internet;
+      // promoções também são cadastradas por empresa no DUAPI.
       if (
         cdEmpresa &&
         (entity.key === 'produto' || entity.key === 'tabela-preco-promocao')
@@ -95,7 +104,13 @@ async function syncEntity(
         total = items.length;
       }
 
-      await entity.insertFn(items, holdingIdFallback);
+      const itemsParaGravar =
+        entity.key === 'produto'
+          ? items.filter((item) =>
+              podeSincronizarProduto(item, verificaLiberadoInternet),
+            )
+          : items;
+      await entity.insertFn(itemsParaGravar, holdingIdFallback);
       downloaded += items.length;
 
       store.setEntityProgress(entity.key, {

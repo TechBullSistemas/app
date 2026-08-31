@@ -34,7 +34,12 @@ export async function bulkInsertEmpresas(
   // Compatibilidade com uma API anterior, que ainda não enviava logoUrl.
   // Quando o campo existe e muda, o caminho local não é reaproveitado para
   // que a nova imagem seja baixada na sequência da sincronização.
-  const preparados = items.map((item) => {
+  const preparados = items.map((rawItem) => {
+    const item = {
+      ...rawItem,
+      idVerificaTambemColunaLiberadoInternet:
+        rawItem.idVerificaTambemColunaLiberadoInternet ?? 0,
+    };
     const holdingId = Number(item.holdingId ?? holdingIdFallback);
     const cdEmpresa = Number(item.cdEmpresa);
     const anterior = anteriorPorChave.get(empresaKey(cdEmpresa, holdingId));

@@ -1,4 +1,5 @@
 import { getDb } from '../database';
+import { produtoLiberadoInternet } from '../../sync/produtoLiberadoInternet';
 
 export interface ProdutoRow {
   cd_produto: number;
@@ -20,6 +21,7 @@ export interface ProdutoRow {
   raw_json: string | null;
   id_tipo_produto?: string | null;
   fator_venda?: number | null;
+  id_liberado_internet?: number;
 }
 
 function pickPreco(it: any) {
@@ -53,7 +55,7 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
         `INSERT OR REPLACE INTO produto
          (cd_produto, holding_id, descricao, referencia, cd_marca, cd_grupo, cd_fornecedor,
           cd_unidade, cd_cor, cd_tamanho, vl_venda, vl_atacado, vl_promocao, qt_disponivel,
-          foto_url, foto_local, raw_json)
+          foto_url, foto_local, raw_json, id_liberado_internet)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
            COALESCE(
              (SELECT foto_local FROM produto
@@ -62,7 +64,7 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
                WHERE cd_produto = ? AND holding_id = ? AND foto_url = ?),
              NULL
            ),
-           ?)`,
+           ?, ?)`,
         [
           it.cdProduto,
           holdingId,
@@ -86,6 +88,7 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
           holdingId,
           it.fotoUrl ?? null,
           JSON.stringify(it),
+          produtoLiberadoInternet(it.idLiberadoInternet) ? 1 : 0,
         ],
       );
 

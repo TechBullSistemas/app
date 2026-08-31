@@ -33,6 +33,7 @@ export interface EmpresaParametros {
   idPermiteAlterarValorProdutoPalm: 'S' | 'A' | 'N';
   idPermiteAlterarFormaPagamentoApp: boolean;
   idDataSincronizacaoVendaApp: boolean;
+  idVerificaTambemColunaLiberadoInternet: boolean;
   // Fórmula dinâmica
   dsFuncaoCalculoPrecoVenda: string | null;
   dsFuncaoCalculoMargemLucro: string | null;
@@ -72,6 +73,7 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   idPermiteAlterarValorProdutoPalm: 'S',
   idPermiteAlterarFormaPagamentoApp: true,
   idDataSincronizacaoVendaApp: false,
+  idVerificaTambemColunaLiberadoInternet: false,
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
   idCustoAgregado: 'N',
@@ -190,6 +192,8 @@ export async function getEmpresaParametros(
       row.id_permite_alterar_forma_pagamento_app !== 0,
     idDataSincronizacaoVendaApp:
       row.id_data_sincronizacao_venda_app === 1,
+    idVerificaTambemColunaLiberadoInternet:
+      row.id_verifica_tambem_coluna_liberado_internet === 1,
     dsFuncaoCalculoPrecoVenda: s(
       row.ds_funcao_calculo_preco_venda,
       DEFAULTS.dsFuncaoCalculoPrecoVenda,

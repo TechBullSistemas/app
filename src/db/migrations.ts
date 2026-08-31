@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS empresa (
   logo_local TEXT,
   id_permite_alterar_forma_pagamento_app INTEGER DEFAULT 1,
   id_data_sincronizacao_venda_app INTEGER DEFAULT 0,
+  id_verifica_tambem_coluna_liberado_internet INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (cd_empresa, holding_id)
 );
 
@@ -606,6 +607,12 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   await ensureColumn(
     db,
     'empresa',
+    'id_verifica_tambem_coluna_liberado_internet',
+    'id_verifica_tambem_coluna_liberado_internet INTEGER NOT NULL DEFAULT 0',
+  );
+  await ensureColumn(
+    db,
+    'empresa',
     'cd_tabela_preco_padrao',
     'cd_tabela_preco_padrao INTEGER',
   );
@@ -689,6 +696,7 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
 
   // Produto: campos novos do motor de precificação.
   const produtoCols: Array<[string, string]> = [
+    ['id_liberado_internet', 'id_liberado_internet INTEGER NOT NULL DEFAULT 1'],
     ['cd_imposto', 'cd_imposto INTEGER'],
     ['pr_ipi', 'pr_ipi REAL DEFAULT 0'],
     ['id_origem_produto', "id_origem_produto TEXT DEFAULT '0'"],

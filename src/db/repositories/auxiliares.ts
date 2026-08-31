@@ -28,6 +28,10 @@ const MAPS: Record<string, MapDef> = {
         from: 'idDataSincronizacaoVendaApp',
         to: 'id_data_sincronizacao_venda_app',
       },
+      {
+        from: 'idVerificaTambemColunaLiberadoInternet',
+        to: 'id_verifica_tambem_coluna_liberado_internet',
+      },
       { from: 'cdEstado', to: 'cd_estado' },
       { from: 'cdTabelaPrecoPadrao', to: 'cd_tabela_preco_padrao' },
       { from: 'idDestacaIpi', to: 'id_destaca_ipi' },

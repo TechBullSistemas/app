@@ -58,3 +58,9 @@ src/
 3. Trabalha **offline**: consultas, novas vendas e visitas são gravadas no SQLite + outbox.
 4. **Enviar Informações** (`/sync/enviar`): sobe vendas e visitas para `/api/mobile/upload/*` quando há internet.
 5. PDF da venda gerado localmente (`expo-print`); o botão **Enviar por E-mail** só aparece online (`/api/mobile/email/venda`).
+
+## Produtos liberados para internet
+
+O catálogo continua recebendo apenas produtos ativos. Se a configuração da empresa `idVerificaTambemColunaLiberadoInternet` estiver ativa, exige também `idLiberadoInternet`. A API aplica o filtro e o app o confere antes da gravação local. A flag vem do DUAPI; a configuração começa desativada e produtos legados começam liberados.
+
+Após mudar a configuração ou a liberação no DUAPI, aguarde a integração e execute **Buscar informações** para renovar o catálogo. A migração SQLite é automática e compatível com OTA; não apaga vendas pendentes. A API antiga, sem as novas propriedades, mantém o comportamento anterior.
