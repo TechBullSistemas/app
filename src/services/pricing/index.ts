@@ -14,7 +14,7 @@ import type {
   TabelaPrecoItemEngine,
   TabelaPrecoPromocaoEngine,
 } from './types';
-import { calcularAliquotas } from './aliquotas';
+import { calcularAliquotaIcmsEfetiva, calcularAliquotas } from './aliquotas';
 import { calcularSubstituicao } from './substituicao';
 import { calcularIpi } from './ipi';
 import { calcularComissao } from './comissao';
@@ -52,6 +52,14 @@ function mapImpostoUfRow(r: any): ImpostoUfEngine {
       r.pr_reducao_base_substituicao_externo,
     ),
     prReducaoIcmsInterno: Number(r.pr_reducao_icms_interno),
+    prReducaoIcmsInternoConsumidor:
+      r.pr_reducao_icms_interno_consumidor == null
+        ? null
+        : Number(r.pr_reducao_icms_interno_consumidor),
+    prReducaoIcmsInternoIndustria:
+      r.pr_reducao_icms_interno_industria == null
+        ? null
+        : Number(r.pr_reducao_icms_interno_industria),
     prReducaoIcmsExterno: Number(r.pr_reducao_icms_externo),
     prPis: Number(r.pr_pis),
     prCofins: Number(r.pr_cofins),
@@ -333,7 +341,12 @@ export async function calcularItem(
     prIcmsTabela,
     tpClienteVenda: contexto.cliente?.tpClienteVenda ?? 'C',
   });
-  contexto.prIcmsSaida = aliquotas.prIcmsVenda;
+  // A fórmula de formação do preço espera a carga efetiva do ICMS. A
+  // apuração fiscal continua usando alíquota nominal + base reduzida abaixo.
+  contexto.prIcmsSaida = calcularAliquotaIcmsEfetiva(
+    aliquotas.prIcmsVenda,
+    aliquotas.prReducaoIcms,
+  );
   // Modo 'M': PIS/COFINS vêm do imposto_uf da UF da empresa (fallback para o
   // registro da UF do cliente quando a empresa não tem linha cadastrada).
   const impostoUfPisCofins = empresa.idFormaPrecoVendaProduto === 'M'

@@ -44,6 +44,40 @@ export function pickIcmsInterno(
 }
 
 /**
+ * Escolhe a redução da base de ICMS interna conforme o destino da venda.
+ * O campo `prReducaoIcmsInterno` é o campo legado de revenda do DUAPI.
+ * Campos ausentes (null/undefined) caem no legado para bancos ainda não
+ * sincronizados; zero explícito é preservado.
+ */
+export function pickReducaoIcmsInterno(
+  impostoUf: ImpostoUfEngine,
+  tp?: string | null,
+): number {
+  const legadoRevenda = safeNumber(impostoUf.prReducaoIcmsInterno);
+  if (tp === 'C') {
+    return impostoUf.prReducaoIcmsInternoConsumidor == null
+      ? legadoRevenda
+      : safeNumber(impostoUf.prReducaoIcmsInternoConsumidor);
+  }
+  if (tp === 'I') {
+    return impostoUf.prReducaoIcmsInternoIndustria == null
+      ? legadoRevenda
+      : safeNumber(impostoUf.prReducaoIcmsInternoIndustria);
+  }
+  return legadoRevenda;
+}
+
+/** Converte alíquota nominal + redução de base na carga equivalente. */
+export function calcularAliquotaIcmsEfetiva(
+  aliquotaNominal: number,
+  reducaoBase: number,
+): number {
+  const aliquota = safeNumber(aliquotaNominal);
+  const reducao = Math.min(100, Math.max(0, safeNumber(reducaoBase)));
+  return aliquota * (1 - reducao / 100);
+}
+
+/**
  * Porta de `f_calcula_imposto_busca_aliquota2`.
  *
  * Decide qual alíquota de ICMS aplicar (interna vs externa, importado, MVA externo)
@@ -101,7 +135,7 @@ export function calcularAliquotas(params: {
       prReducaoBaseSubstituicao = safeNumber(
         impostoUf.prReducaoBaseSubstituicaoInterno,
       );
-      prReducaoIcms = safeNumber(impostoUf.prReducaoIcmsInterno);
+      prReducaoIcms = pickReducaoIcmsInterno(impostoUf, tpClienteVenda);
     } else {
       prIcmsVenda = safeNumber(impostoUf.prIcmsExterno);
       prBaseSubstituicao = empresa.idUtilizaMvaExternoVenda === 'S'
@@ -136,6 +170,9 @@ export function calcularAliquotas(params: {
     fonteIcmsInterno = pickM.fonte;
     if (isInterna) {
       prIcmsVenda = pickM.valor;
+      prReducaoIcms = fonteM
+        ? pickReducaoIcmsInterno(fonteM, tpClienteVenda)
+        : 0;
     } else {
       prIcmsVenda = pickM.valor > 0 ? safeNumber(prIcmsTabela) : 0;
     }

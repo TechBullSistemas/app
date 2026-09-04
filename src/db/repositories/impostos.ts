@@ -19,6 +19,8 @@ export interface ImpostoUfRow {
   pr_reducao_base_substituicao_interno: number;
   pr_reducao_base_substituicao_externo: number;
   pr_reducao_icms_interno: number;
+  pr_reducao_icms_interno_consumidor: number | null;
+  pr_reducao_icms_interno_industria: number | null;
   pr_reducao_icms_externo: number;
   pr_pis: number;
   pr_cofins: number;
@@ -56,9 +58,10 @@ export async function bulkInsertImpostoUf(items: any[], holdingFallback?: number
            pr_icms_externo,
            pr_base_substituicao_interno, pr_base_substituicao_externo,
            pr_reducao_base_substituicao_interno, pr_reducao_base_substituicao_externo,
-           pr_reducao_icms_interno, pr_reducao_icms_externo,
+           pr_reducao_icms_interno, pr_reducao_icms_interno_consumidor,
+           pr_reducao_icms_interno_industria, pr_reducao_icms_externo,
            pr_pis, pr_cofins, pr_fcp, pr_fcp_st
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           Number(it.cdImposto),
           String(it.cdEstado),
@@ -72,6 +75,12 @@ export async function bulkInsertImpostoUf(items: any[], holdingFallback?: number
           Number(it.prReducaoBaseSubstituicaoInterno ?? 0),
           Number(it.prReducaoBaseSubstituicaoExterno ?? 0),
           Number(it.prReducaoIcmsInterno ?? 0),
+          it.prReducaoIcmsInternoConsumidor == null
+            ? null
+            : Number(it.prReducaoIcmsInternoConsumidor),
+          it.prReducaoIcmsInternoIndustria == null
+            ? null
+            : Number(it.prReducaoIcmsInternoIndustria),
           Number(it.prReducaoIcmsExterno ?? 0),
           Number(it.prPis ?? 0),
           Number(it.prCofins ?? 0),

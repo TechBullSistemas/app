@@ -96,7 +96,11 @@ export interface ImpostoUfEngine {
   prBaseSubstituicaoExterno: number;
   prReducaoBaseSubstituicaoInterno: number;
   prReducaoBaseSubstituicaoExterno: number;
+  // O campo interno legado representa revenda no DUAPI. Consumidor e
+  // indústria são opcionais para manter compatibilidade com syncs antigos.
   prReducaoIcmsInterno: number;
+  prReducaoIcmsInternoConsumidor?: number | null;
+  prReducaoIcmsInternoIndustria?: number | null;
   prReducaoIcmsExterno: number;
   prPis: number;
   prCofins: number;

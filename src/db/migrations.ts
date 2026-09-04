@@ -349,6 +349,8 @@ CREATE TABLE IF NOT EXISTS imposto_uf (
   pr_reducao_base_substituicao_interno REAL DEFAULT 0,
   pr_reducao_base_substituicao_externo REAL DEFAULT 0,
   pr_reducao_icms_interno REAL DEFAULT 0,
+  pr_reducao_icms_interno_consumidor REAL,
+  pr_reducao_icms_interno_industria REAL,
   pr_reducao_icms_externo REAL DEFAULT 0,
   pr_pis REAL DEFAULT 0,
   pr_cofins REAL DEFAULT 0,
@@ -756,6 +758,22 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     'id_ultima_venda INTEGER DEFAULT 0',
   );
   await ensureColumn(db, 'condicao_preco', 'vl_valor', 'vl_valor REAL DEFAULT 0');
+
+  // ImpostoUf: reduções internas variam pelo destino da venda. Mantemos o
+  // campo legado como revenda e usamos NULL nos novos campos para distinguir
+  // banco ainda não sincronizado de uma redução explicitamente zerada.
+  await ensureColumn(
+    db,
+    'imposto_uf',
+    'pr_reducao_icms_interno_consumidor',
+    'pr_reducao_icms_interno_consumidor REAL',
+  );
+  await ensureColumn(
+    db,
+    'imposto_uf',
+    'pr_reducao_icms_interno_industria',
+    'pr_reducao_icms_interno_industria REAL',
+  );
 
   // TabelaPrecoItem: campos de custo expostos à fórmula dinâmica.
   const tpiCols: Array<[string, string]> = [
