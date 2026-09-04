@@ -1,6 +1,6 @@
 import type { EmpresaParametros } from '@/db/repositories/parametros';
 import type { ImpostoUfEngine, ProdutoEngine } from './types';
-import { safeNumber } from './casasDecimais';
+import { roundN, safeNumber } from './casasDecimais';
 
 export interface AliquotasResult {
   prIcmsVenda: number; // ICMS aplicado na operação atual
@@ -67,14 +67,18 @@ export function pickReducaoIcmsInterno(
   return legadoRevenda;
 }
 
-/** Converte alíquota nominal + redução de base na carga equivalente. */
+/**
+ * Converte alíquota nominal + redução de base na carga equivalente.
+ * O DUAPI trabalha com a carga efetiva arredondada em duas casas antes de
+ * aplicá-la à fórmula de formação do preço.
+ */
 export function calcularAliquotaIcmsEfetiva(
   aliquotaNominal: number,
   reducaoBase: number,
 ): number {
   const aliquota = safeNumber(aliquotaNominal);
   const reducao = Math.min(100, Math.max(0, safeNumber(reducaoBase)));
-  return aliquota * (1 - reducao / 100);
+  return roundN(aliquota * (1 - reducao / 100), 2);
 }
 
 /**

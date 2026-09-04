@@ -53,11 +53,12 @@ test('preserva zero explícito e usa legado quando campo novo está ausente', ()
 
 test('calcula a carga efetiva após redução da base', () => {
   const icmsEfetivo = calcularAliquotaIcmsEfetiva(17, 48.23);
-  assert.equal(icmsEfetivo, 8.8009);
+  assert.equal(icmsEfetivo, 8.8);
   assert.equal(calcularAliquotaIcmsEfetiva(17, 0), 17);
   assert.equal(calcularAliquotaIcmsEfetiva(17, 100), 0);
 
-  // Caso real Santa Clara, produto 2493: a fórmula volta ao valor da tabela.
-  const preco = 4391.28 / (1 - (30.1476 + 0.65 + 3 + icmsEfetivo) / 100);
-  assert.equal(Math.round(preco * 100) / 100, 7650.11);
+  // Caso real Santa Clara, produto 2493: preservando a precisão da margem do
+  // DUAPI e arredondando a carga efetiva, a fórmula volta ao valor da tabela.
+  const preco = 4391.28 / (1 - (30.14764706 + 0.65 + 3 + icmsEfetivo) / 100);
+  assert.equal(Math.round(preco * 100) / 100, 7650);
 });
