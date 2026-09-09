@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -136,6 +137,10 @@ export default function ClienteDetalhe() {
     : null;
 
   function tirarPedido() {
+    if (cli?.id_ativo !== 1) {
+      Alert.alert('Cliente inativo', 'Não é permitido realizar novas vendas para este cliente.');
+      return;
+    }
     router.push({
       pathname: '/(app)/pedidos/novo',
       params: { cd_cliente: String(cdCliente), holding_id: String(holdingId) },
@@ -155,6 +160,7 @@ export default function ClienteDetalhe() {
           ) : null}
         </View>
         {cli.razao_social ? <Text style={styles.subtle}>{cli.razao_social}</Text> : null}
+        <Text style={styles.subtle}>Situação: {cli.id_ativo === 1 ? 'Ativo' : 'Inativo'}</Text>
         <Text style={styles.subtle}>{fmtCpfCnpj(cli.cpf_cnpj) || '—'}</Text>
         <View style={styles.headerActions}>
           <Pressable style={styles.tirarBtn} onPress={tirarPedido}>

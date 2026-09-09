@@ -437,7 +437,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (preCdCliente && preHoldingId) {
       (async () => {
         const c = await getClienteById(preCdCliente, preHoldingId);
-        if (c) setCliente(c);
+        if (c?.id_ativo === 1) setCliente(c);
+        else if (c) Alert.alert('Cliente inativo', 'Não é permitido realizar novas vendas para este cliente.');
       })();
     }
   }, [isEdit, preCdCliente, preHoldingId]);
@@ -803,6 +804,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   }, [parcelasManuais, totalComAjuste]);
 
   function adicionarProduto(p: ProdutoRow, vlUltimaCompra: number | null) {
+    if (!(Number(p.vl_venda) > 0)) {
+      Alert.alert('Produto sem preço', 'Selecione somente produtos com valor de venda maior que zero.');
+      return;
+    }
     const exist = itens.find((it) => it.cdProduto === p.cd_produto);
     const permite = extractPermiteSaldoNegativo(p.raw_json);
     const disponivel = p.qt_disponivel ?? null;
@@ -1484,7 +1489,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       router.back();
     } catch (err) {
       console.error(err);
-      Alert.alert('Erro', 'Não foi possível salvar o pedido.');
+      Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível salvar o pedido.');
     } finally {
       setSalvando(false);
     }
@@ -1960,6 +1965,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       </Pressable>
 
       <ClientePicker
+        somenteAtivos
         visible={cliPickerOpen}
         onClose={() => setCliPickerOpen(false)}
         onSelect={setCliente}

@@ -19,11 +19,17 @@ import { ClienteAtrasoInfo } from '@/components/ClienteAtrasoInfo';
 
 interface Props {
   visible: boolean;
+  somenteAtivos?: boolean;
   onClose: () => void;
   onSelect: (cliente: ClienteRow) => void;
 }
 
-export function ClientePicker({ visible, onClose, onSelect }: Props) {
+export function ClientePicker({
+  visible,
+  onClose,
+  onSelect,
+  somenteAtivos = false,
+}: Props) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ClienteRow[]>([]);
   const [atrasoMap, setAtrasoMap] = useState<Map<string, TituloAtrasoResumo>>(new Map());
@@ -33,7 +39,7 @@ export function ClientePicker({ visible, onClose, onSelect }: Props) {
     let alive = true;
     const t = setTimeout(async () => {
       const [rows, atraso] = await Promise.all([
-        listClientes(search, 100),
+        listClientes(search, 100, somenteAtivos),
         getMapTitulosAtrasoResumo(),
       ]);
       if (alive) {
@@ -45,7 +51,7 @@ export function ClientePicker({ visible, onClose, onSelect }: Props) {
       alive = false;
       clearTimeout(t);
     };
-  }, [search, visible]);
+  }, [search, visible, somenteAtivos]);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>

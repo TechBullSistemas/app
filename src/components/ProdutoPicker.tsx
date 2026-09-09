@@ -108,8 +108,9 @@ export function ProdutoPicker({
               holdingId,
               search,
               100,
+              true,
             )
-          : await listProdutos(search, 100, holdingId ?? undefined);
+          : await listProdutos(search, 100, holdingId ?? undefined, true);
         if (alive) setItems(rows);
       } catch (err) {
         console.warn('ProdutoPicker: falha ao listar produtos', err);

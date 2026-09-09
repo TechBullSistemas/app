@@ -147,8 +147,10 @@ export async function listProdutos(
   search?: string,
   limit = 100,
   holdingId?: number,
+  somenteComPreco = false,
 ): Promise<ProdutoRow[]> {
   const db = await getDb();
+  const precoFilter = somenteComPreco ? ' AND vl_venda > 0' : '';
   const holdingFilter = holdingId != null ? ' AND holding_id = ?' : '';
   if (search && search.trim()) {
     const like = `%${search.trim()}%`;
@@ -156,7 +158,7 @@ export async function listProdutos(
       `SELECT * FROM produto
        WHERE (CAST(cd_produto AS TEXT) LIKE ? OR descricao LIKE ? OR referencia LIKE ?)
          AND ${FILTRO_TIPO_PRODUTO}
-         ${holdingFilter}
+         ${holdingFilter} ${precoFilter}
        ORDER BY cd_produto ASC LIMIT ?`,
       holdingId != null
         ? [like, like, like, holdingId, limit]
@@ -166,7 +168,7 @@ export async function listProdutos(
   return db.getAllAsync<ProdutoRow>(
     `SELECT * FROM produto
      WHERE ${FILTRO_TIPO_PRODUTO}
-       ${holdingFilter}
+       ${holdingFilter} ${precoFilter}
      ORDER BY cd_produto ASC LIMIT ?`,
     holdingId != null ? [holdingId, limit] : [limit],
   );
@@ -178,6 +180,7 @@ export async function listProdutosVendidos(
   holdingId: number,
   search?: string,
   limit = 100,
+  somenteComPreco = false,
 ): Promise<ProdutoRow[]> {
   if (cdProdutos.length === 0) return [];
 
@@ -188,6 +191,7 @@ export async function listProdutosVendidos(
     FROM produto p
     WHERE p.holding_id = ?
       AND ${FILTRO_TIPO_PRODUTO}
+      ${somenteComPreco ? 'AND p.vl_venda > 0' : ''}
       AND EXISTS (
         SELECT 1
         FROM json_each(?) vendidos

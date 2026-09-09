@@ -157,22 +157,26 @@ const SELECT_CLIENTE_COM_CIDADE = `
   LEFT JOIN cidade ci ON ci.cd_cidade = c.cd_cidade
 `;
 
-export async function listClientes(search?: string, limit = 100): Promise<ClienteRow[]> {
+export async function listClientes(
+  search?: string,
+  limit = 100,
+  somenteAtivos = false,
+): Promise<ClienteRow[]> {
   const db = await getDb();
   if (search && search.trim()) {
     const like = `%${search.trim()}%`;
     return db.getAllAsync<ClienteRow>(
       `${SELECT_CLIENTE_COM_CIDADE}
-       WHERE c.nome LIKE ?
+       WHERE ${somenteAtivos ? 'c.id_ativo = 1 AND' : ''} (c.nome LIKE ?
           OR c.razao_social LIKE ?
           OR c.cpf_cnpj LIKE ?
-          OR CAST(c.cd_cliente AS TEXT) LIKE ?
+          OR CAST(c.cd_cliente AS TEXT) LIKE ?)
        ORDER BY c.nome LIMIT ?`,
       [like, like, like, like, limit],
     );
   }
   return db.getAllAsync<ClienteRow>(
-    `${SELECT_CLIENTE_COM_CIDADE} ORDER BY c.nome LIMIT ?`,
+    `${SELECT_CLIENTE_COM_CIDADE} ${somenteAtivos ? 'WHERE c.id_ativo = 1' : ''} ORDER BY c.nome LIMIT ?`,
     [limit],
   );
 }

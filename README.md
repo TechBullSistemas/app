@@ -64,3 +64,11 @@ src/
 O catálogo continua recebendo apenas produtos ativos. Se a configuração da empresa `idVerificaTambemColunaLiberadoInternet` estiver ativa, exige também `idLiberadoInternet`. A API aplica o filtro e o app o confere antes da gravação local. A flag vem do DUAPI; a configuração começa desativada e produtos legados começam liberados.
 
 Após mudar a configuração ou a liberação no DUAPI, aguarde a integração e execute **Buscar informações** para renovar o catálogo. A migração SQLite é automática e compatível com OTA; não apaga vendas pendentes. A API antiga, sem as novas propriedades, mantém o comportamento anterior.
+
+## Clientes ativos e preço na venda
+
+**Buscar informações** recebe a situação `idAtivo` de todos os clientes, incluindo inativos para consulta de histórico. Novos cadastros permanecem ativos por padrão. Com Duapi, a situação é alterada em `cliente.ativo` (`S`/`N`) e chega após a integração.
+
+Novos pedidos só permitem selecionar clientes ativos e produtos com `vl_venda > 0`, inclusive no filtro **Somente vendidos**. Antes de salvar ou editar pedidos pendentes, o app reconsulta os cadastros locais. A API também recusa a entrada de novas vendas para clientes inativos; reenvios de pedidos já recebidos são idempotentes.
+
+A atualização usa `cliente.id_ativo`, já existente no SQLite, e pode ser distribuída por OTA após a publicação da API. Sem conexão, a validação usa a última base baixada; o envio verifica novamente a situação no servidor.

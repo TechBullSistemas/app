@@ -1,4 +1,5 @@
 import { getDb } from '../database';
+import { validarElegibilidadeVenda } from '../vendaElegibilidade';
 
 export type OutboxStatus = 'pending' | 'sending' | 'sent' | 'error';
 
@@ -53,6 +54,7 @@ export async function enqueueVenda(item: {
 }) {
   const db = await getDb();
   const now = new Date().toISOString();
+  await validarElegibilidadeVenda(db, item.holdingId, item.cdCliente, item.payload.prevendaItem);
   await db.runAsync(
     `INSERT OR REPLACE INTO outbox_venda
      (client_id, cd_cliente, cd_empresa, holding_id, payload, vl_total, status, attempts, last_error, created_at)
@@ -99,6 +101,9 @@ export async function updateOutboxVendaPayload(
   vlTotal: number | null,
 ) {
   const db = await getDb();
+  const existing = await getOutboxVenda(clientId);
+  if (!existing) throw new Error('Pedido não encontrado.');
+  await validarElegibilidadeVenda(db, existing.holding_id, payload.cdCliente, payload.prevendaItem);
   await db.runAsync(
     `UPDATE outbox_venda
        SET payload = ?,
