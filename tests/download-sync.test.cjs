@@ -112,6 +112,12 @@ function harness(options = {}) {
     const localRequire = (name) => {
       if (name === './entities')
         return {
+          DOWNLOAD_STAGES: [
+            { key: 'prepare', label: 'Preparação' },
+            ...entities,
+            { key: 'company-logos', label: 'Logo da empresa' },
+            { key: 'product-photos', label: 'Fotos dos produtos' },
+          ],
           SYNC_ENTITIES: entities,
           SYNC_ENTITY_KEYS: entities.map((e) => e.key),
         };
@@ -147,7 +153,16 @@ test('bloqueia antes da limpeza e mantém o bloqueio até terminar fotos e persi
   const h = harness({ photoWait });
   const run = h.run();
   assert.equal(h.sync.getState().downloadRunning, true);
+  assert.deepEqual(Object.keys(h.sync.getState().entities), [
+    'prepare',
+    'nota-fiscal-saida',
+    'company-logos',
+    'product-photos',
+  ]);
+  assert.equal(h.sync.getState().entities['product-photos'].status, 'idle');
   await h.photoStarted.promise;
+  assert.equal(h.sync.getState().entities['company-logos'].status, 'done');
+  assert.equal(h.sync.getState().entities['product-photos'].status, 'running');
   assert.deepEqual(h.events.slice(0, 2), ['checkpoint', 'clear']);
   assert.equal(h.sync.getState().downloadRunning, true);
   assert.equal(h.sync.getState().downloadFinishedAt, null);
@@ -163,6 +178,11 @@ test('bloqueia antes da limpeza e mantém o bloqueio até terminar fotos e persi
   assert.ok(h.sync.getState().downloadFinishedAt);
   assert.equal(await h.checkpoint.hasIncompleteDownload(), false);
   assert.equal(h.events.at(-1), 'complete');
+  assert.ok(
+    Object.values(h.sync.getState().entities).every((e) => e.status === 'done'),
+  );
+  assert.equal(h.sync.getState().entities['company-logos'].downloaded, 1);
+  assert.equal(h.sync.getState().entities['product-photos'].downloaded, 2);
 });
 
 test('falha de página mantém a base bloqueada e o marcador após reiniciar o processo', async () => {

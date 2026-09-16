@@ -66,3 +66,10 @@ export const SYNC_ENTITIES: SyncEntityDef[] = [
 ];
 
 export const SYNC_ENTITY_KEYS = SYNC_ENTITIES.map((e) => e.key);
+
+export const DOWNLOAD_STAGES = [
+  { key: 'prepare', label: 'Preparação' },
+  ...SYNC_ENTITIES.map(({ key, label }) => ({ key, label })),
+  { key: 'company-logos', label: 'Logo da empresa' },
+  { key: 'product-photos', label: 'Fotos dos produtos' },
+];

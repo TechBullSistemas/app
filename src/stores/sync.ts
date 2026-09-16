@@ -38,7 +38,7 @@ interface SyncState {
   uploadError: string | null;
   uploadFinishedAt: string | null;
 
-  startDownload: () => void;
+  startDownload: (stages?: Array<{ key: string; label: string }>) => void;
   setDownloadProgress: (progress: DownloadProgress) => void;
   requireDownloadRecovery: (message: string) => void;
   setEntityProgress: (key: string, patch: Partial<EntityProgress>) => void;
@@ -61,14 +61,24 @@ export const useSyncStore = create<SyncState>((set) => ({
   uploadError: null,
   uploadFinishedAt: null,
 
-  startDownload: () =>
+  startDownload: (stages = []) =>
     set({
       downloadRunning: true,
       downloadError: null,
       downloadFinishedAt: null,
       downloadNeedsRecovery: true,
       downloadProgress: null,
-      entities: {},
+      entities: Object.fromEntries(
+        stages.map(({ key, label }) => [
+          key,
+          {
+            label,
+            status: 'idle',
+            downloaded: 0,
+            total: 0,
+          },
+        ]),
+      ),
     }),
   setDownloadProgress: (downloadProgress) => set({ downloadProgress }),
   requireDownloadRecovery: (downloadError) =>

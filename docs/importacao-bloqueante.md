@@ -1,9 +1,19 @@
 # Importação com bloqueio de uso
 
-`DownloadGate`, no layout autenticado, apresenta um modal de tela cheia durante
-a carga e quando houver recuperação pendente. Não há ação para dispensá-lo;
-o Voltar do Android chega ao `onRequestClose`, que mantém o modal aberto.
-O modal cobre o cabeçalho e a navegação por gestos do iOS. `expo-keep-awake`
+`BuscarInformacoesScreen` preserva a listagem detalhada durante a carga.
+`DownloadOverview` mostra resumo fixo no topo e todas as etapas na lista rolável,
+com ordem estável e contadores reservados. `DOWNLOAD_STAGES` inicializa inclusive
+as etapas pendentes, preparação, logo e fotos. Não há centralização vertical do
+conteúdo nem inserção/remoção de linhas durante a carga.
+
+`usePreventRemove` intercepta o retorno e apresenta um aviso sem mudar a tela.
+O botão físico do Android também é tratado quando a tela é a primeira da pilha;
+o gesto de retorno do iOS fica desabilitado enquanto há carga pendente.
+`DownloadGate` restaura o marcador no layout autenticado e redireciona para
+essa mesma tela em caso de recuperação. O modal é usado somente na verificação
+inicial/transição de rota, nunca para cobrir a listagem durante a importação.
+O bloqueio de navegação é liberado quando a sessão expira, permitindo novo login.
+`expo-keep-awake`
 mantém a tela ligada somente enquanto há execução; não impede bloqueio manual
 nem garante execução com o app em segundo plano.
 
@@ -32,6 +42,8 @@ em versões anteriores à introdução deste controle.
 - Cortar a conexão: conferir erro e tentar novamente após reconectar.
 - Encerrar o processo durante carga: ao reabrir, conferir bloqueio e nova tentativa.
 - Confirmar tela ligada durante execução e comportamento normal após sucesso/erro.
+- Verificar que transições entre etapas com/sem total não movem resumo nem linhas;
+  rolar até etapas pendentes e conferir que o scroll não é reposicionado.
 
 Esta alteração não implementa serviço nativo de download em segundo plano,
 retomada por cursor persistente ou troca atômica da base offline.

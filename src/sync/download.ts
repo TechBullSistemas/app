@@ -2,7 +2,12 @@ import { getApi, extractApiErrorMessage } from '@/api/client';
 import { clearSyncTables } from '@/db/migrations';
 import { getDb } from '@/db/database';
 import { resetSyncMeta, upsertSyncMeta } from '@/db/repositories/syncMeta';
-import { SYNC_ENTITIES, SYNC_ENTITY_KEYS, SyncEntityDef } from './entities';
+import {
+  DOWNLOAD_STAGES,
+  SYNC_ENTITIES,
+  SYNC_ENTITY_KEYS,
+  SyncEntityDef,
+} from './entities';
 import { useSyncStore } from '@/stores/sync';
 import { useSessionStore } from '@/stores/session';
 import { downloadPendingCompanyLogos } from '@/services/companyLogoCache';
@@ -23,11 +28,24 @@ export async function runDownloadSync() {
     throw new Error('Aguarde o envio de informações terminar.');
   const { user, token } = useSessionStore.getState();
   if (!user || !token) throw new Error('Faça login novamente para importar.');
-  store.startDownload();
+  store.startDownload(DOWNLOAD_STAGES);
 
-  const steps = SYNC_ENTITIES.length + 3;
-  const progress = (label: string, step: number, done = 0, total = 0) =>
+  const steps = DOWNLOAD_STAGES.length;
+  let activeStep = -1;
+  const progress = (label: string, step: number, done = 0, total = 0) => {
+    if (activeStep >= 0 && activeStep !== step) {
+      store.setEntityProgress(DOWNLOAD_STAGES[activeStep].key, {
+        status: 'done',
+      });
+    }
+    activeStep = step;
     store.setDownloadProgress({ label, step, steps, done, total });
+    store.setEntityProgress(DOWNLOAD_STAGES[step].key, {
+      status: 'running',
+      downloaded: done,
+      total,
+    });
+  };
   progress('Preparando importação', 0);
 
   try {
@@ -63,8 +81,15 @@ export async function runDownloadSync() {
         progress('Fotos dos produtos', steps - 1, done, total),
     });
     await clearIncompleteDownload();
+    store.setEntityProgress(DOWNLOAD_STAGES[activeStep].key, {
+      status: 'done',
+    });
     store.finishDownload(true);
   } catch (err) {
+    store.setEntityProgress(DOWNLOAD_STAGES[activeStep].key, {
+      status: 'error',
+      message: extractApiErrorMessage(err),
+    });
     store.finishDownload(false, extractApiErrorMessage(err));
     throw err;
   }
