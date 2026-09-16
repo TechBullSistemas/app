@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -12,57 +10,39 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useSyncStore } from '@/stores/sync';
 import { runDownloadSync } from '@/sync/download';
-import { downloadPendingPhotos } from '@/services/photoCache';
 import { useOnlineStore } from '@/stores/online';
+import { extractApiErrorMessage } from '@/api/client';
 
 export default function BuscarInformacoesScreen() {
   const isOnline = useOnlineStore((s) => s.isOnline);
-  const { entities, downloadRunning, downloadError, downloadFinishedAt, startDownload } =
-    useSyncStore();
+  const {
+    entities,
+    downloadRunning,
+    downloadError,
+    downloadFinishedAt,
+    uploadRunning,
+  } = useSyncStore();
 
-  const [photoProgress, setPhotoProgress] = useState<{ done: number; total: number } | null>(null);
-  const [photosRunning, setPhotosRunning] = useState(false);
-  const [logoProgress, setLogoProgress] = useState<{
-    done: number;
-    total: number;
-  } | null>(null);
-
-  const summary = useMemo(() => {
-    const list = Object.values(entities);
-    const totalDownloaded = list.reduce((acc, e) => acc + e.downloaded, 0);
-    const totalEsperado = list.reduce((acc, e) => acc + (e.total || e.downloaded), 0);
-    return { count: list.length, totalDownloaded, totalEsperado };
-  }, [entities]);
-
-  async function start() {
+  function start() {
     if (!isOnline) {
-      Alert.alert('Sem conexão', 'Conecte-se à internet para sincronizar.');
+      Alert.alert('Sem conexão', 'Conecte-se à internet para importar.');
       return;
     }
     Alert.alert(
-      'Atenção',
-      'Isso vai apagar TODOS os dados locais e baixar tudo do servidor. Continuar?',
+      'Importar informações?',
+      'A base local será atualizada. Aguarde a conclusão para voltar a usar o app.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Continuar',
+          text: 'Importar',
           onPress: async () => {
             try {
-              setLogoProgress({ done: 0, total: 0 });
-              await runDownloadSync({
-                onLogoProgress: (done, total) =>
-                  setLogoProgress({ done, total }),
-              });
-              setPhotosRunning(true);
-              await downloadPendingPhotos({
-                onProgress: (done, total) => setPhotoProgress({ done, total }),
-              });
-              setPhotosRunning(false);
-              Alert.alert('Sincronização', 'Concluído com sucesso!');
+              await runDownloadSync();
             } catch (err) {
-              setPhotosRunning(false);
-              console.error(err);
-              Alert.alert('Erro', 'Falha durante a sincronização. Veja os detalhes na tela.');
+              // Erros durante a carga são apresentados no bloqueio global.
+              if (!useSyncStore.getState().downloadNeedsRecovery) {
+                Alert.alert('Importação', extractApiErrorMessage(err));
+              }
             }
           },
         },
@@ -71,128 +51,95 @@ export default function BuscarInformacoesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.card}>
         <Text style={styles.title}>Buscar informações</Text>
-        <Text style={styles.subtle}>
-          O banco local será limpo e todos os dados (clientes, produtos, vendas, títulos, etc.)
-          serão baixados novamente para uso offline.
-        </Text>
-
         <Pressable
-          style={[styles.button, downloadRunning && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: downloadRunning || uploadRunning }}
+          style={[
+            styles.button,
+            (downloadRunning || uploadRunning) && styles.disabled,
+          ]}
           onPress={start}
-          disabled={downloadRunning}
+          disabled={downloadRunning || uploadRunning}
         >
           <Ionicons name="cloud-download" size={20} color="#fff" />
-          <Text style={styles.buttonText}>
-            {downloadRunning ? 'Sincronizando...' : 'Iniciar Download'}
-          </Text>
+          <Text style={styles.buttonText}>Iniciar Download</Text>
         </Pressable>
+        {uploadRunning ? (
+          <Text style={styles.subtle}>
+            Aguarde o envio de informações terminar.
+          </Text>
+        ) : null}
       </View>
 
-      {(downloadRunning || summary.count > 0) && (
+      {downloadFinishedAt && !downloadRunning && !downloadError ? (
+        <View
+          style={[styles.card, styles.success]}
+          accessibilityLiveRegion="polite"
+        >
+          <Text style={styles.successTitle}>Importação concluída</Text>
+          <Text style={styles.subtle}>
+            {new Date(downloadFinishedAt).toLocaleString('pt-BR')}
+          </Text>
+        </View>
+      ) : null}
+
+      {Object.keys(entities).length > 0 ? (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Progresso por entidade</Text>
-          {Object.entries(entities).map(([key, e]) => (
+          <Text style={styles.sectionTitle}>Informações importadas</Text>
+          {Object.entries(entities).map(([key, entity]) => (
             <View key={key} style={styles.line}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.lineLabel}>{e.label}</Text>
-                <Text style={styles.lineSub}>
-                  {e.downloaded.toLocaleString('pt-BR')} / {(e.total || e.downloaded).toLocaleString('pt-BR')}
+              <View style={styles.lineContent}>
+                <Text style={styles.lineLabel}>{entity.label}</Text>
+                <Text style={styles.subtle}>
+                  {entity.downloaded.toLocaleString('pt-BR')} registros
                 </Text>
-                {e.message ? <Text style={styles.errorText}>{e.message}</Text> : null}
               </View>
-              <Status status={e.status} />
+              <Ionicons
+                name={
+                  entity.status === 'done' ? 'checkmark-circle' : 'alert-circle'
+                }
+                size={20}
+                color={entity.status === 'done' ? '#16a34a' : '#b45309'}
+              />
             </View>
           ))}
-        </View>
-      )}
-
-      {(photosRunning || photoProgress) && (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Fotos dos produtos</Text>
-          <View style={styles.line}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.lineLabel}>Baixando fotos</Text>
-              <Text style={styles.lineSub}>
-                {photoProgress?.done ?? 0} / {photoProgress?.total ?? 0}
-              </Text>
-            </View>
-            {photosRunning ? <ActivityIndicator /> : <Status status="done" />}
-          </View>
-        </View>
-      )}
-
-      {logoProgress && logoProgress.total > 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Identidade da empresa</Text>
-          <View style={styles.line}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.lineLabel}>Logo para uso offline</Text>
-              <Text style={styles.lineSub}>
-                {logoProgress.done} / {logoProgress.total}
-              </Text>
-            </View>
-            <Status
-              status={
-                logoProgress.done < logoProgress.total ? 'running' : 'done'
-              }
-            />
-          </View>
-        </View>
-      ) : null}
-
-      {downloadError ? (
-        <View style={[styles.card, { backgroundColor: '#fee2e2' }]}>
-          <Text style={{ color: '#991b1b', fontWeight: '700' }}>Erro: {downloadError}</Text>
-        </View>
-      ) : null}
-
-      {downloadFinishedAt && !downloadRunning && !downloadError ? (
-        <View style={[styles.card, { backgroundColor: '#dcfce7' }]}>
-          <Text style={{ color: '#14532d', fontWeight: '700' }}>
-            Última sincronização: {new Date(downloadFinishedAt).toLocaleString('pt-BR')}
-          </Text>
         </View>
       ) : null}
     </ScrollView>
   );
 }
 
-function Status({ status }: { status: string }) {
-  if (status === 'running') return <ActivityIndicator />;
-  if (status === 'done') return <Ionicons name="checkmark-circle" size={20} color="#16a34a" />;
-  if (status === 'error') return <Ionicons name="alert-circle" size={20} color="#dc2626" />;
-  return <Ionicons name="ellipse-outline" size={20} color="#94a3b8" />;
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
-  card: { backgroundColor: '#fff', padding: 14, borderRadius: 12, gap: 8 },
+  content: { padding: 16, gap: 14 },
+  card: { backgroundColor: '#fff', padding: 14, borderRadius: 12, gap: 12 },
   title: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-  subtle: { color: '#475569' },
-  sectionTitle: { fontWeight: '700', color: '#0f172a', marginBottom: 4 },
+  subtle: { color: '#64748b' },
+  sectionTitle: { fontWeight: '700', color: '#0f172a' },
   button: {
     flexDirection: 'row',
-    backgroundColor: '#14b8a6',
+    gap: 8,
+    backgroundColor: '#1e3a8a',
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginTop: 8,
+    minHeight: 48,
   },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  buttonText: { color: '#fff', fontWeight: '700' },
+  disabled: { opacity: 0.6 },
   line: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
-    borderTopWidth: 1,
-    borderColor: '#f1f5f9',
-    gap: 8,
+    borderBottomColor: '#e2e8f0',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  lineLabel: { color: '#0f172a', fontWeight: '600' },
-  lineSub: { color: '#64748b', fontSize: 12, marginTop: 2 },
-  errorText: { color: '#dc2626', fontSize: 12, marginTop: 2 },
+  lineContent: { flex: 1, gap: 4 },
+  lineLabel: { color: '#334155', fontWeight: '600' },
+  success: { backgroundColor: '#dcfce7' },
+  successTitle: { color: '#14532d', fontWeight: '700' },
 });

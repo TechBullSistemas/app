@@ -1,4 +1,10 @@
 import { Alert } from 'react-native';
+import { useSyncStore } from '@/stores/sync';
+
+function isImporting() {
+  const sync = useSyncStore.getState();
+  return sync.downloadRunning || sync.downloadNeedsRecovery;
+}
 
 interface UpdatesModule {
   isEnabled: boolean;
@@ -19,9 +25,13 @@ function getUpdates(): UpdatesModule | null {
   }
 }
 
-export async function checkAndApplyUpdate(opts: {
-  silent?: boolean;
-} = {}): Promise<'no-module' | 'disabled' | 'no-update' | 'applied' | 'error'> {
+export async function checkAndApplyUpdate(
+  opts: {
+    silent?: boolean;
+  } = {},
+): Promise<
+  'no-module' | 'disabled' | 'no-update' | 'applied' | 'deferred' | 'error'
+> {
   const Updates = getUpdates();
   if (!Updates) return 'no-module';
   if (!Updates.isEnabled) return 'disabled';
@@ -31,6 +41,8 @@ export async function checkAndApplyUpdate(opts: {
     if (!check.isAvailable) return 'no-update';
 
     await Updates.fetchUpdateAsync();
+
+    if (isImporting()) return 'deferred';
 
     if (opts.silent) {
       await Updates.reloadAsync();
@@ -50,6 +62,10 @@ export async function checkAndApplyUpdate(opts: {
           {
             text: 'Recarregar',
             onPress: async () => {
+              if (isImporting()) {
+                resolve('deferred');
+                return;
+              }
               try {
                 await Updates.reloadAsync();
               } catch {}

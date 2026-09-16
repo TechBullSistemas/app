@@ -18,10 +18,20 @@ export interface UploadItemProgress {
   message?: string | null;
 }
 
+export interface DownloadProgress {
+  label: string;
+  step: number;
+  steps: number;
+  done: number;
+  total: number;
+}
+
 interface SyncState {
   downloadRunning: boolean;
   downloadFinishedAt: string | null;
   downloadError: string | null;
+  downloadNeedsRecovery: boolean;
+  downloadProgress: DownloadProgress | null;
   entities: Record<string, EntityProgress>;
   uploadRunning: boolean;
   uploadItems: UploadItemProgress[];
@@ -29,6 +39,8 @@ interface SyncState {
   uploadFinishedAt: string | null;
 
   startDownload: () => void;
+  setDownloadProgress: (progress: DownloadProgress) => void;
+  requireDownloadRecovery: (message: string) => void;
   setEntityProgress: (key: string, patch: Partial<EntityProgress>) => void;
   finishDownload: (success: boolean, error?: string | null) => void;
 
@@ -41,6 +53,8 @@ export const useSyncStore = create<SyncState>((set) => ({
   downloadRunning: false,
   downloadFinishedAt: null,
   downloadError: null,
+  downloadNeedsRecovery: false,
+  downloadProgress: null,
   entities: {},
   uploadRunning: false,
   uploadItems: [],
@@ -52,8 +66,13 @@ export const useSyncStore = create<SyncState>((set) => ({
       downloadRunning: true,
       downloadError: null,
       downloadFinishedAt: null,
+      downloadNeedsRecovery: true,
+      downloadProgress: null,
       entities: {},
     }),
+  setDownloadProgress: (downloadProgress) => set({ downloadProgress }),
+  requireDownloadRecovery: (downloadError) =>
+    set({ downloadNeedsRecovery: true, downloadError }),
   setEntityProgress: (key, patch) =>
     set((s) => {
       const prev: EntityProgress = s.entities[key] || {
@@ -73,7 +92,8 @@ export const useSyncStore = create<SyncState>((set) => ({
     set({
       downloadRunning: false,
       downloadError: success ? null : error || 'Erro durante o download',
-      downloadFinishedAt: new Date().toISOString(),
+      downloadNeedsRecovery: !success,
+      downloadFinishedAt: success ? new Date().toISOString() : null,
     }),
 
   startUpload: (items) =>

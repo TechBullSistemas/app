@@ -8,31 +8,48 @@ import { useSessionStore } from '@/stores/session';
 import { downloadPendingCompanyLogos } from '@/services/companyLogoCache';
 import { getEmpresaParametros } from '@/db/repositories/parametros';
 import { podeSincronizarProduto } from './produtoLiberadoInternet';
+import { downloadPendingPhotos } from '@/services/photoCache';
+import {
+  clearIncompleteDownload,
+  markDownloadIncomplete,
+} from './downloadCheckpoint';
 
 const PAGE_SIZE = 500;
 
-export async function runDownloadSync(opts?: {
-  onPhotoStart?: () => void;
-  onLogoProgress?: (done: number, total: number) => void;
-}) {
+export async function runDownloadSync() {
   const store = useSyncStore.getState();
+  if (store.downloadRunning) return;
+  if (store.uploadRunning)
+    throw new Error('Aguarde o envio de informações terminar.');
+  const { user, token } = useSessionStore.getState();
+  if (!user || !token) throw new Error('Faça login novamente para importar.');
   store.startDownload();
 
+  const steps = SYNC_ENTITIES.length + 3;
+  const progress = (label: string, step: number, done = 0, total = 0) =>
+    store.setDownloadProgress({ label, step, steps, done, total });
+  progress('Preparando importação', 0);
+
   try {
+    await markDownloadIncomplete();
     const db = await getDb();
     await clearSyncTables(db);
     await resetSyncMeta(SYNC_ENTITY_KEYS);
 
-    const holdingId = useSessionStore.getState().user?.holdingId;
-    const cdEmpresa = useSessionStore.getState().user?.cdEmpresa;
+    const { holdingId, cdEmpresa } = user;
 
-    for (const entity of SYNC_ENTITIES) {
-      await syncEntity(entity, holdingId, cdEmpresa);
+    for (const [index, entity] of SYNC_ENTITIES.entries()) {
+      progress(entity.label, index + 1);
+      await syncEntity(entity, holdingId, cdEmpresa, (done, total) =>
+        progress(entity.label, index + 1, done, total),
+      );
     }
 
+    progress('Logo da empresa', steps - 2);
     try {
       await downloadPendingCompanyLogos({
-        onProgress: opts?.onLogoProgress,
+        onProgress: (done, total) =>
+          progress('Logo da empresa', steps - 2, done, total),
       });
     } catch (error) {
       // A logo é opcional: uma falha de arquivo não invalida os dados
@@ -40,10 +57,13 @@ export async function runDownloadSync(opts?: {
       console.warn('[sync] não foi possível armazenar a logo offline:', error);
     }
 
+    progress('Fotos dos produtos', steps - 1);
+    await downloadPendingPhotos({
+      onProgress: (done, total) =>
+        progress('Fotos dos produtos', steps - 1, done, total),
+    });
+    await clearIncompleteDownload();
     store.finishDownload(true);
-    if (opts?.onPhotoStart) {
-      opts.onPhotoStart();
-    }
   } catch (err) {
     store.finishDownload(false, extractApiErrorMessage(err));
     throw err;
@@ -54,12 +74,20 @@ async function syncEntity(
   entity: SyncEntityDef,
   holdingIdFallback?: number,
   cdEmpresa?: number,
+  onProgress?: (done: number, total: number) => void,
 ) {
   const store = useSyncStore.getState();
   const api = getApi();
 
-  store.setEntityProgress(entity.key, { status: 'running', label: entity.label });
-  await upsertSyncMeta(entity.key, { status: 'running', message: null, downloaded: 0 });
+  store.setEntityProgress(entity.key, {
+    status: 'running',
+    label: entity.label,
+  });
+  await upsertSyncMeta(entity.key, {
+    status: 'running',
+    message: null,
+    downloaded: 0,
+  });
 
   try {
     let cursor: string | null = null;
@@ -112,6 +140,7 @@ async function syncEntity(
           : items;
       await entity.insertFn(itemsParaGravar, holdingIdFallback);
       downloaded += items.length;
+      onProgress?.(downloaded, total);
 
       store.setEntityProgress(entity.key, {
         status: 'running',
@@ -127,6 +156,12 @@ async function syncEntity(
 
       cursor = data.nextCursor ?? null;
     } while (entity.paged && cursor);
+
+    if (downloaded < total) {
+      throw new Error(
+        `${entity.label}: importação incompleta (${downloaded} de ${total}). Tente novamente.`,
+      );
+    }
 
     store.setEntityProgress(entity.key, {
       status: 'done',
