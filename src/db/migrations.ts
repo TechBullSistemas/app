@@ -534,6 +534,8 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
 
   // Cliente: tabela de preço preferencial usada pelo motor de precificação.
   await ensureColumn(db, 'cliente', 'cd_tabela_preco', 'cd_tabela_preco INTEGER');
+  await ensureColumn(db, 'cliente', 'cd_tabela_preco_condicao', 'cd_tabela_preco_condicao INTEGER');
+  await ensureColumn(db, 'cliente', 'cd_condicao_preco_padrao', 'cd_condicao_preco_padrao INTEGER');
   // Cliente: condição de pagamento padrão para pré-selecionar no pedido.
   await ensureColumn(
     db,

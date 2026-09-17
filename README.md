@@ -72,3 +72,22 @@ Após mudar a configuração ou a liberação no DUAPI, aguarde a integração e
 Novos pedidos só permitem selecionar clientes ativos e produtos com `vl_venda > 0`, inclusive no filtro **Somente vendidos**. Antes de salvar ou editar pedidos pendentes, o app reconsulta os cadastros locais. A API também recusa a entrada de novas vendas para clientes inativos; reenvios de pedidos já recebidos são idempotentes.
 
 A atualização usa `cliente.id_ativo`, já existente no SQLite, e pode ser distribuída por OTA após a publicação da API. Sem conexão, a validação usa a última base baixada; o envio verifica novamente a situação no servidor.
+
+## Condição de preço preferencial e fotos por saldo
+
+Após **Buscar informações**, novos itens usam a condição de preço do cliente.
+A API resolve `cdTabelaPrecoCondicao` (vínculo na tabela) para
+`cdCondicaoPrecoPadrao` (condição usada no cálculo); o app grava os dois campos
+por migração SQLite aditiva, compatível com OTA. Sem preferência disponível,
+mantém a primeira condição padrão. Trocar o cliente reaplica a preferência aos
+itens; reabrir um pedido salvo preserva as condições existentes. O vendedor
+continua podendo escolher outra condição por item.
+
+A holding pode ter `id_busca_fotos_apenas_produtos_com_saldo` habilitado
+diretamente no banco da API (padrão `false`). Nesse caso, a API omite a URL das
+fotos de produtos sem saldo positivo na empresa selecionada, mantendo o produto
+no catálogo. A próxima sincronização atualiza as fotos e reaproveita o cache
+quando o mesmo produto volta a ter saldo.
+
+Publicar primeiro a migração e a API; somente após o deploy concluído publicar
+a OTA no canal `production`. No tablet, executar **Buscar informações**.

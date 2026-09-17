@@ -29,7 +29,11 @@ function harness() {
     cache.set(file, module.exports);
     const localRequire = (name) => {
       if (name === 'expo-sqlite') return {};
+      if (name === 'react-native-get-random-values') return {};
+      if (name === 'uuid') return { v4: () => 'fixture-uuid' };
+      if (name === './outbox') return {};
       if (name.endsWith('/database')) return { getDb: async () => db };
+      if (name.startsWith('@/')) return load(path.join(__dirname, '../src', name.slice(2) + '.ts'));
       if (name.startsWith('.')) return load(path.resolve(path.dirname(file), name + '.ts'));
       return require(name);
     };
@@ -71,5 +75,70 @@ test('migração OTA aditiva, API antiga, flags 0/1 e renovação do catálogo',
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM produto').get().n, 1);
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM produto WHERE cd_produto=2').get().n, 0);
     assert.equal(sqlite.prepare('SELECT payload FROM outbox_venda WHERE client_id=?').get('venda-pendente').payload, '{"teste":true}');
+  } finally { sqlite.close(); }
+});
+
+test('preferência do cliente sobrevive à OTA e sincronização remove preferência antiga', async () => {
+  const { sqlite, db, fromSrc } = harness();
+  try {
+    const { runMigrations } = fromSrc('db/migrations.ts');
+    const { bulkInsertClientes, getClienteById } = fromSrc('db/repositories/clientes.ts');
+    await runMigrations(db);
+    sqlite.exec('ALTER TABLE cliente DROP COLUMN cd_tabela_preco_condicao');
+    sqlite.exec('ALTER TABLE cliente DROP COLUMN cd_condicao_preco_padrao');
+    await runMigrations(db);
+    await runMigrations(db);
+    await bulkInsertClientes([{ cdCliente: 300851, cdTabelaPrecoCondicao: 29, cdCondicaoPrecoPadrao: 13 }], 28);
+    let cliente = await getClienteById(300851, 28);
+    assert.equal(cliente.cd_tabela_preco_condicao, 29);
+    assert.equal(cliente.cd_condicao_preco_padrao, 13);
+    await bulkInsertClientes([{ cdCliente: 300851 }], 28);
+    cliente = await getClienteById(300851, 28);
+    assert.equal(cliente.cd_tabela_preco_condicao, null);
+    assert.equal(cliente.cd_condicao_preco_padrao, null);
+  } finally { sqlite.close(); }
+});
+
+test('produto sem URL continua no catálogo e recupera foto do cache quando volta a ter saldo', async () => {
+  const { sqlite, db, fromSrc } = harness();
+  try {
+    const { runMigrations, clearSyncTables } = fromSrc('db/migrations.ts');
+    const { bulkInsertProdutos, listProdutosComFotoPendente, setProdutoFotoLocal } = fromSrc('db/repositories/produtos.ts');
+    await runMigrations(db);
+    const produto = { cdProduto: 4, fotoUrl: 'https://fixture/4.jpg' };
+    await bulkInsertProdutos([produto], 28);
+    assert.equal((await listProdutosComFotoPendente()).length, 1);
+    await setProdutoFotoLocal(4, 28, 'file:///cache/4.jpg');
+    await clearSyncTables(db);
+    await bulkInsertProdutos([{ ...produto, fotoUrl: null }], 28);
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM produto').get().n, 1);
+    assert.equal((await listProdutosComFotoPendente()).length, 0);
+    await clearSyncTables(db);
+    await bulkInsertProdutos([produto], 28);
+    assert.equal(sqlite.prepare('SELECT foto_local FROM produto WHERE cd_produto=4').get().foto_local, 'file:///cache/4.jpg');
+    assert.equal((await listProdutosComFotoPendente()).length, 0);
+  } finally { sqlite.close(); }
+});
+
+test('cliente 300851 escolhe condição resolvida 13 e motor calcula 8,03 sobre tabela 7,30', async () => {
+  const { sqlite, db, fromSrc } = harness();
+  try {
+    await fromSrc('db/migrations.ts').runMigrations(db);
+    const { bulkInsertClientes, getClienteById } = fromSrc('db/repositories/clientes.ts');
+    const { escolherCondicaoPrecoPadrao } = fromSrc('services/pricing/condicaoPrecoPadrao.ts');
+    const { calcularPrecoUnitario } = fromSrc('services/pricing/precoUnitario.ts');
+    await bulkInsertClientes([{ cdCliente: 300851, cdTabelaPreco: 6, cdTabelaPrecoCondicao: 29, cdCondicaoPrecoPadrao: 13 }], 28);
+    const cliente = await getClienteById(300851, 28);
+    const condicao = escolherCondicaoPrecoPadrao([
+      { cdCondicaoPreco: 1, idPromocao: false, idUltimaVenda: false, prAcrescimo: 0, idTipoAcrescimo: 'V' },
+      { cdCondicaoPreco: 13, idPromocao: false, idUltimaVenda: false, prAcrescimo: 10, idTipoAcrescimo: 'V' },
+    ], cliente.cd_condicao_preco_padrao);
+    const result = await calcularPrecoUnitario({
+      contexto: { empresa: { nrCasaDecimalValorVenda: 2 }, cdTabelaPreco: 6, condicaoPreco: condicao },
+      precoTabela: { vlVenda: 7.3 },
+      qt: 1, cdProduto: 4, holdingId: 28,
+    });
+    assert.equal(result.vlUnitario, 8.03);
+    assert.equal(result.trace.cdCondicaoPreco, 13);
   } finally { sqlite.close(); }
 });

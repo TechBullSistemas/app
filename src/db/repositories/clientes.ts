@@ -21,6 +21,8 @@ export interface ClienteRow {
   id_ativo: number;
   raw_json: string | null;
   cd_tabela_preco?: number | null;
+  cd_tabela_preco_condicao?: number | null;
+  cd_condicao_preco_padrao?: number | null;
   cd_condicao_pagto?: number | null;
   cd_forma_pagamento?: number | null;
   tp_cliente_venda?: 'C' | 'I' | 'R' | string | null;
@@ -78,8 +80,9 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
         `INSERT OR REPLACE INTO cliente
          (cd_cliente, holding_id, nome, razao_social, cpf_cnpj, tp_pessoa, fone, celular, email,
           endereco, numero, bairro, cd_cidade, cep, id_ativo, raw_json,
+          cd_tabela_preco_condicao, cd_condicao_preco_padrao,
           client_id, origem, pending_sync)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
         [
           it.cdCliente,
           holdingId,
@@ -97,6 +100,8 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
           it.cep ?? null,
           it.idAtivo === false ? 0 : 1,
           JSON.stringify(it),
+          it.cdTabelaPrecoCondicao ?? null,
+          it.cdCondicaoPrecoPadrao ?? null,
         ],
       );
 

@@ -62,6 +62,7 @@ import {
   validacaoDescontoMaxUsuarioPreco,
 } from '@/services/pricing/descontoMaxUsuario';
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
+import { escolherCondicaoPrecoPadrao } from '@/services/pricing/condicaoPrecoPadrao';
 import { getEmpresaParametros } from '@/db/repositories/parametros';
 import { getUltimasVendasCliente } from '@/db/repositories/notas';
 import {
@@ -224,6 +225,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [parcelasManuais, setParcelasManuais] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(isEdit);
+  const [calculandoCondicoes, setCalculandoCondicoes] = useState(false);
   const cdClienteSelecionado = cliente?.cd_cliente ?? null;
   const holdingIdSelecionado = user?.holdingId ?? null;
 
@@ -590,6 +592,48 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     [itens],
   );
 
+  // Resolve também itens adicionados antes do cliente/parâmetros carregarem.
+  // Condições já escolhidas (inclusive em pedidos salvos) são preservadas.
+  useEffect(() => {
+    if (carregando || !user || !empresaParams || !cdTabelaPrecoResolvida) {
+      setCalculandoCondicoes(false);
+      return;
+    }
+    let cancelado = false;
+    const pendentes = itens.filter((it) => it.cdCondicaoPreco == null);
+    setCalculandoCondicoes(pendentes.length > 0);
+    (async () => {
+      try {
+        const padroes = new Map<number, CondicaoPrecoOpt>();
+        for (const item of pendentes) {
+          const opcoes = await carregarCondicoesPreco(item.cdProduto, item.qt, item.rawProduto);
+          if (cancelado) return;
+          const padrao = escolherCondicaoPrecoPadrao(opcoes, cliente?.cd_condicao_preco_padrao);
+          if (padrao) padroes.set(item.cdProduto, padrao);
+        }
+        if (padroes.size) setItens((prev) => prev.map((item) => {
+          const padrao = padroes.get(item.cdProduto);
+          return padrao && item.cdCondicaoPreco == null
+            ? aplicarCondicaoPreco(item, padrao)
+            : item;
+        }));
+      } finally {
+        if (!cancelado) setCalculandoCondicoes(false);
+      }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    itens.map((it) => `${it.cdProduto}:${it.qt}:${it.cdCondicaoPreco ?? ''}`).join('|'),
+    cliente?.cd_cliente,
+    cliente?.cd_condicao_preco_padrao,
+    cdTabelaPrecoResolvida,
+    condicaoSel?.cd_condicao,
+    empresaParams,
+    user,
+    carregando,
+  ]);
+
   // Recalcula o pricing (IPI/ST/Flex/comissão) sempre que mudam itens, condição
   // ou contexto fiscal. Mantém a UX: se o motor não estiver disponível
   // (parâmetros não sincronizados), os itens permanecem sem `pricing`.
@@ -860,18 +904,6 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           rawProduto: raw,
         },
       ]);
-      // Carrega as condições de preço aplicáveis ao produto e seleciona uma
-      // padrão automaticamente (espelha o legado, que sempre tem uma condição
-      // pré-selecionada no spinner ao adicionar item).
-      (async () => {
-        const opts = await carregarCondicoesPreco(p.cd_produto, passo, raw);
-        if (!opts.length) return;
-        // Preferência: primeira condição não-promocional não-últimaVenda; se
-        // não houver, qualquer uma. Mantém o vlValor da condição como mínimo.
-        const padrao =
-          opts.find((o) => !o.idPromocao && !o.idUltimaVenda) ?? opts[0];
-        selecionarCondicaoPreco(p.cd_produto, padrao);
-      })();
     }
   }
 
@@ -1112,20 +1144,24 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     }
   }
 
+  function aplicarCondicaoPreco(it: ItemPedido, opt: CondicaoPrecoOpt): ItemPedido {
+    return {
+      ...it,
+      cdCondicaoPreco: opt.cdCondicaoPreco,
+      condicaoPrecoLabel: opt.descricao,
+      vlMinimo: opt.vlValor,
+      vlUnitario: opt.vlValor,
+      vlUnitarioOriginal: opt.vlValor,
+      vlInput: undefined,
+    };
+  }
+
   function selecionarCondicaoPreco(cdProduto: number, opt: CondicaoPrecoOpt) {
     setItens((prev) =>
       prev.map((it) => {
         if (it.cdProduto !== cdProduto) return it;
         // Atualiza preço para o vlValor da condição selecionada e fixa o mínimo.
-        return {
-          ...it,
-          cdCondicaoPreco: opt.cdCondicaoPreco,
-          condicaoPrecoLabel: opt.descricao,
-          vlMinimo: opt.vlValor,
-          vlUnitario: opt.vlValor,
-          vlUnitarioOriginal: opt.vlValor,
-          vlInput: undefined,
-        };
+        return aplicarCondicaoPreco(it, opt);
       }),
     );
   }
@@ -1193,6 +1229,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   }
 
   async function salvar() {
+    if (calculandoCondicoes) return;
     if (!user) return;
     if (!cliente) return Alert.alert('Atenção', 'Selecione o cliente.');
     if (!itens.length) return Alert.alert('Atenção', 'Adicione pelo menos um item.');
@@ -1951,12 +1988,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       )}
 
       <Pressable
-        style={[styles.button, salvando && { opacity: 0.6 }]}
+        style={[styles.button, (salvando || calculandoCondicoes) && { opacity: 0.6 }]}
         onPress={salvar}
-        disabled={salvando}
+        disabled={salvando || calculandoCondicoes}
       >
         <Text style={styles.buttonText}>
-          {salvando
+          {calculandoCondicoes
+            ? 'Calculando preços...'
+            : salvando
             ? 'Salvando...'
             : isEdit
               ? 'Atualizar Pedido'
@@ -1968,7 +2007,20 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         somenteAtivos
         visible={cliPickerOpen}
         onClose={() => setCliPickerOpen(false)}
-        onSelect={setCliente}
+        onSelect={(novoCliente) => {
+          if (novoCliente.cd_cliente !== cliente?.cd_cliente) {
+            setItens((prev) => prev.map((item) => ({
+              ...item,
+              cdCondicaoPreco: null,
+              condicaoPrecoLabel: null,
+              vlMinimo: null,
+              vlUnitario: item.vlUnitarioOriginal,
+              vlInput: undefined,
+              pricing: null,
+            })));
+          }
+          setCliente(novoCliente);
+        }}
       />
       <ProdutoPicker
         visible={prodPickerOpen}
