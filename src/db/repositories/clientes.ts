@@ -23,6 +23,8 @@ export interface ClienteRow {
   cd_tabela_preco?: number | null;
   cd_tabela_preco_condicao?: number | null;
   cd_condicao_preco_padrao?: number | null;
+  id_bloqueia_venda_cliente_atrasado_app?: number | null;
+  dt_primeiro_titulo_aberto?: string | null;
   cd_condicao_pagto?: number | null;
   cd_forma_pagamento?: number | null;
   tp_cliente_venda?: 'C' | 'I' | 'R' | string | null;
@@ -81,8 +83,9 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
          (cd_cliente, holding_id, nome, razao_social, cpf_cnpj, tp_pessoa, fone, celular, email,
           endereco, numero, bairro, cd_cidade, cep, id_ativo, raw_json,
           cd_tabela_preco_condicao, cd_condicao_preco_padrao,
+          id_bloqueia_venda_cliente_atrasado_app, dt_primeiro_titulo_aberto,
           client_id, origem, pending_sync)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'remoto', 0)`,
         [
           it.cdCliente,
           holdingId,
@@ -102,6 +105,8 @@ export async function bulkInsertClientes(items: any[], holdingIdFallback?: numbe
           JSON.stringify(it),
           it.cdTabelaPrecoCondicao ?? null,
           it.cdCondicaoPrecoPadrao ?? null,
+          it.idBloqueiaVendaClienteAtrasadoApp === true ? 1 : 0,
+          it.dtPrimeiroTituloAberto ?? null,
         ],
       );
 

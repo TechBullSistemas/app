@@ -142,3 +142,22 @@ test('cliente 300851 escolhe condição resolvida 13 e motor calcula 8,03 sobre 
     assert.equal(result.trace.cdCondicaoPreco, 13);
   } finally { sqlite.close(); }
 });
+
+test('bloqueio por atraso migra via OTA, permanece offline e limpa após pagamento ou desativação', async () => {
+  const { sqlite, db, fromSrc } = harness();
+  try {
+    const { runMigrations } = fromSrc('db/migrations.ts');
+    const { bulkInsertClientes, getClienteById } = fromSrc('db/repositories/clientes.ts');
+    const { clienteComVendaBloqueada } = fromSrc('db/clienteAtrasado.ts');
+    await runMigrations(db);
+    sqlite.exec('ALTER TABLE cliente DROP COLUMN id_bloqueia_venda_cliente_atrasado_app');
+    sqlite.exec('ALTER TABLE cliente DROP COLUMN dt_primeiro_titulo_aberto');
+    await runMigrations(db);
+    await bulkInsertClientes([{ cdCliente: 1, idBloqueiaVendaClienteAtrasadoApp: true, dtPrimeiroTituloAberto: '2000-01-01' }], 28);
+    assert.equal(clienteComVendaBloqueada(await getClienteById(1, 28)), true);
+    await bulkInsertClientes([{ cdCliente: 1, idBloqueiaVendaClienteAtrasadoApp: true, dtPrimeiroTituloAberto: null }], 28);
+    assert.equal(clienteComVendaBloqueada(await getClienteById(1, 28)), false);
+    await bulkInsertClientes([{ cdCliente: 1 }], 28);
+    assert.equal((await getClienteById(1, 28)).id_bloqueia_venda_cliente_atrasado_app, 0);
+  } finally { sqlite.close(); }
+});

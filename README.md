@@ -84,10 +84,24 @@ itens; reabrir um pedido salvo preserva as condições existentes. O vendedor
 continua podendo escolher outra condição por item.
 
 A holding pode ter `id_busca_fotos_apenas_produtos_com_saldo` habilitado
-diretamente no banco da API (padrão `false`). Nesse caso, a API omite a URL das
+na engrenagem da tela **Integração DUAPI** ou no banco da API (padrão `false`). Nesse caso, a API omite a URL das
 fotos de produtos sem saldo positivo na empresa selecionada, mantendo o produto
 no catálogo. A próxima sincronização atualiza as fotos e reaproveita o cache
 quando o mesmo produto volta a ter saldo.
 
 Publicar primeiro a migração e a API; somente após o deploy concluído publicar
 a OTA no canal `production`. No tablet, executar **Buscar informações**.
+
+## Clientes com títulos vencidos
+
+A opção `idBloqueiaVendaClienteAtrasadoApp` da holding começa desativada e é
+editável pela engrenagem da integração. A API sincroniza a regra e a data do
+primeiro título aberto por cliente, incluindo vencimentos futuros. Após o dia
+do vencimento em Brasília, o app bloqueia seleção e gravação de venda, inclusive
+offline. Considera todas as empresas da holding; títulos quitados, cancelados
+ou negociados não entram no cálculo.
+
+Ao receber uma venda nova, a API valida novamente. Reenvios de pedidos já
+recebidos permanecem idempotentes. Após pagamento ou mudança da configuração,
+aguarde a integração DUAPI e use **Buscar informações** para atualizar a base
+local. A migração SQLite é aditiva e não remove pedidos pendentes.

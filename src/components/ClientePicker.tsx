@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -16,10 +17,12 @@ import {
 import { ClienteRow, listClientes } from '@/db/repositories/clientes';
 import { getMapTitulosAtrasoResumo, TituloAtrasoResumo } from '@/db/repositories/notas';
 import { ClienteAtrasoInfo } from '@/components/ClienteAtrasoInfo';
+import { clienteComVendaBloqueada, MENSAGEM_CLIENTE_ATRASADO } from '@/db/clienteAtrasado';
 
 interface Props {
   visible: boolean;
   somenteAtivos?: boolean;
+  bloquearAtrasados?: boolean;
   onClose: () => void;
   onSelect: (cliente: ClienteRow) => void;
 }
@@ -29,6 +32,7 @@ export function ClientePicker({
   onClose,
   onSelect,
   somenteAtivos = false,
+  bloquearAtrasados = false,
 }: Props) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ClienteRow[]>([]);
@@ -81,6 +85,10 @@ export function ClientePicker({
               <Pressable
                 style={styles.row}
                 onPress={() => {
+                  if (bloquearAtrasados && clienteComVendaBloqueada(item)) {
+                    Alert.alert('Cliente em atraso', MENSAGEM_CLIENTE_ATRASADO);
+                    return;
+                  }
                   onSelect(item);
                   onClose();
                 }}

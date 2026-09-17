@@ -5,9 +5,10 @@ import { validarElegibilidadeVenda } from "./vendaElegibilidade";
 
 test("SQLite: ativo, inativo, reativação, preço zerado/negativo/nulo e isolamento de holding", async () => {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(`CREATE TABLE cliente (holding_id INTEGER, cd_cliente INTEGER, id_ativo INTEGER);
+  sqlite.exec(`CREATE TABLE cliente (holding_id INTEGER, cd_cliente INTEGER, id_ativo INTEGER,
+    id_bloqueia_venda_cliente_atrasado_app INTEGER DEFAULT 0, dt_primeiro_titulo_aberto TEXT);
     CREATE TABLE produto (holding_id INTEGER, cd_produto INTEGER, vl_venda REAL);
-    INSERT INTO cliente VALUES (7, 1, 1), (8, 1, 0), (7, -1, 1);
+    INSERT INTO cliente (holding_id, cd_cliente, id_ativo) VALUES (7, 1, 1), (8, 1, 0), (7, -1, 1);
     INSERT INTO produto VALUES (7, 10, 10), (8, 10, 0), (7, 11, NULL);`);
   const db = {
     getFirstAsync: async (sql: string, params: any[]) =>
@@ -16,6 +17,10 @@ test("SQLite: ativo, inativo, reativação, preço zerado/negativo/nulo e isolam
   try {
     await validarElegibilidadeVenda(db, 7, 1, [{ cdProduto: 10 }]);
     await validarElegibilidadeVenda(db, 7, -1, [{ cdProduto: 10 }]);
+    sqlite.exec("UPDATE cliente SET id_bloqueia_venda_cliente_atrasado_app = 1, dt_primeiro_titulo_aberto = '2000-01-01' WHERE holding_id = 7 AND cd_cliente = 1");
+    await assert.rejects(validarElegibilidadeVenda(db, 7, 1, [{ cdProduto: 10 }]), /título a receber em atraso/);
+    sqlite.exec("UPDATE cliente SET dt_primeiro_titulo_aberto = NULL WHERE holding_id = 7 AND cd_cliente = 1");
+    await validarElegibilidadeVenda(db, 7, 1, [{ cdProduto: 10 }]);
     await assert.rejects(
       validarElegibilidadeVenda(db, 8, 1, [{ cdProduto: 10 }]),
       /Cliente inativo/,

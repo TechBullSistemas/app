@@ -536,6 +536,8 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   await ensureColumn(db, 'cliente', 'cd_tabela_preco', 'cd_tabela_preco INTEGER');
   await ensureColumn(db, 'cliente', 'cd_tabela_preco_condicao', 'cd_tabela_preco_condicao INTEGER');
   await ensureColumn(db, 'cliente', 'cd_condicao_preco_padrao', 'cd_condicao_preco_padrao INTEGER');
+  await ensureColumn(db, 'cliente', 'id_bloqueia_venda_cliente_atrasado_app', 'id_bloqueia_venda_cliente_atrasado_app INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn(db, 'cliente', 'dt_primeiro_titulo_aberto', 'dt_primeiro_titulo_aberto TEXT');
   // Cliente: condição de pagamento padrão para pré-selecionar no pedido.
   await ensureColumn(
     db,

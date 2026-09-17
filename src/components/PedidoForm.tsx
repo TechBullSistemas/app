@@ -30,6 +30,7 @@ import {
 import { CondicaoPrecoPicker } from '@/components/CondicaoPrecoPicker';
 import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
+import { clienteComVendaBloqueada, MENSAGEM_CLIENTE_ATRASADO } from '@/db/clienteAtrasado';
 import { ProdutoRow, getProdutoById } from '@/db/repositories/produtos';
 import { getDb } from '@/db/database';
 import { useSessionStore } from '@/stores/session';
@@ -439,7 +440,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (preCdCliente && preHoldingId) {
       (async () => {
         const c = await getClienteById(preCdCliente, preHoldingId);
-        if (c?.id_ativo === 1) setCliente(c);
+        if (c && clienteComVendaBloqueada(c)) Alert.alert('Cliente em atraso', MENSAGEM_CLIENTE_ATRASADO);
+        else if (c?.id_ativo === 1) setCliente(c);
         else if (c) Alert.alert('Cliente inativo', 'Não é permitido realizar novas vendas para este cliente.');
       })();
     }
@@ -2005,6 +2007,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
       <ClientePicker
         somenteAtivos
+        bloquearAtrasados
         visible={cliPickerOpen}
         onClose={() => setCliPickerOpen(false)}
         onSelect={(novoCliente) => {
