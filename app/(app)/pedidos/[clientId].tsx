@@ -86,6 +86,20 @@ export default function PedidoDetalhe() {
     const display = payload.__display ?? payload;
     const data: PedidoPdfData = {
       ...empresaPdf,
+      cdCliente: r.cd_cliente,
+      cdTabelaPreco: payload.cdTabelaPreco,
+      cdCondicaoPagto: payload.cdCondicaoPagto,
+      cdTipoVenda: payload.cdTipoVenda,
+      cdFormaPagamento: payload.cdFormaPagamento,
+      condicaoPagamento: display.condicaoLabel,
+      representante:
+        display.representante ??
+        (payload.prevendaItem?.[0]?.cdFuncionario != null
+          ? String(payload.prevendaItem[0].cdFuncionario)
+          : null),
+      dsOrdemCompra: display.dsOrdemCompra || payload.dsOrdemCompra,
+      vlDescontoTotal: Number(payload.vlDescontoTotal) || 0,
+      vlAcrescimoTotal: Number(payload.vlAcrescimoTotal) || 0,
       numero: r.cd_prevenda ?? r.client_id.slice(0, 8).toUpperCase(),
       clienteNome: cli?.nome ?? `Cliente #${r.cd_cliente}`,
       clienteCpfCnpj: cli?.cpf_cnpj ?? null,
@@ -98,6 +112,8 @@ export default function PedidoDetalhe() {
         descricao: it.descricao,
         qt: Number(it.qt) || 0,
         vlUnitario: Number(it.vlUnitario) || 0,
+        vlUnitarioOriginal:
+          it.vlUnitarioOriginal == null ? null : Number(it.vlUnitarioOriginal),
         vlTotal: Number(it.vlTotal) || 0,
       })),
       vlTotal: Number(r.vl_total) || 0,

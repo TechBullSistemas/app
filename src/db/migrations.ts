@@ -595,6 +595,7 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   );
 
   // Empresa: flags do motor de precificação + UF + fórmulas dinâmicas.
+  await ensureColumn(db, 'empresa', 'raw_json', 'raw_json TEXT');
   await ensureColumn(db, 'empresa', 'logo_url', 'logo_url TEXT');
   await ensureColumn(db, 'empresa', 'logo_local', 'logo_local TEXT');
   await ensureColumn(

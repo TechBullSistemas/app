@@ -1435,6 +1435,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       };
 
       const displayPayload = {
+        representante: `${user.userId} - ${user.nome}`,
         condicaoLabel: condicaoSel.descricao,
         formaPagamentoLabel: formaPagamentoSel.descricao,
         observacao: obs.trim() || null,
@@ -1486,6 +1487,16 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           );
           const pdfUri = await gerarPdfPedido({
             ...empresaPdf,
+            cdCliente: cliente.cd_cliente,
+            cdTabelaPreco: cdTabelaPrecoResolvida,
+            cdCondicaoPagto: condicaoSel.cd_condicao,
+            cdTipoVenda: CD_TIPO_VENDA_PADRAO,
+            cdFormaPagamento: formaPagamentoSel.cd_forma,
+            condicaoPagamento: condicaoSel.descricao,
+            representante: displayPayload.representante,
+            dsOrdemCompra: displayPayload.dsOrdemCompra,
+            vlDescontoTotal,
+            vlAcrescimoTotal,
             numero,
             clienteNome: cliente.nome ?? `Cliente #${cliente.cd_cliente}`,
             clienteCpfCnpj: cliente.cpf_cnpj ?? null,

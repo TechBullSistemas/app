@@ -161,3 +161,33 @@ test('bloqueio por atraso migra via OTA, permanece offline e limpa após pagamen
     assert.equal((await getClienteById(1, 28)).id_bloqueia_venda_cliente_atrasado_app, 0);
   } finally { sqlite.close(); }
 });
+
+test('modelo de impressão e cadastro completo sobrevivem à migração e à sincronização offline', async () => {
+  const {sqlite,db,fromSrc}=harness();
+  try {
+    const {runMigrations}=fromSrc('db/migrations.ts');
+    const {bulkInsertEmpresas,getEmpresaById}=fromSrc('db/repositories/empresas.ts');
+    const {bulkInsertClientes}=fromSrc('db/repositories/clientes.ts');
+    const {bulkInsertProdutos}=fromSrc('db/repositories/produtos.ts');
+    const {complementarPedidoPdf}=fromSrc('services/pdf/dados.ts');
+    await runMigrations(db);
+    sqlite.exec('ALTER TABLE empresa DROP COLUMN raw_json');
+    await runMigrations(db);
+    await bulkInsertEmpresas([{cdEmpresa:3,nmEmpresa:'Empresa',modeloImpressaoApp:'detalhado_fotos',inscEstadual:'123',cidade:{nmCidade:'Criciúma',cdEstado:'SC'}}],28);
+    const empresa=await getEmpresaById(3,28);
+    assert.equal(JSON.parse(empresa.raw_json).modeloImpressaoApp,'detalhado_fotos');
+    assert.equal(JSON.parse(empresa.raw_json).inscEstadual,'123');
+    await bulkInsertClientes([{cdCliente:1,nmCliente:'Cliente',rg:'ISENTO',cep:'88000000',fone:'123'}],28);
+    await bulkInsertProdutos([{cdProduto:4,dsProduto:'Produto',cdClassificacaoFiscal:'01234567',produtoBarra:[{cdBarra:'07890000000001'}]}],28);
+    await bulkInsertProdutos([{cdProduto:4,cdClassificacaoFiscal:'99999999',produtoBarra:[{cdBarra:'outra holding'}]}],99);
+    const result=await complementarPedidoPdf({holdingId:28,cdCliente:1,clienteNome:'Cliente',data:'17/09/2026',vlTotal:8.03,itens:[{cdProduto:4,descricao:'Nome salvo',qt:1,vlUnitario:8.03,vlTotal:8.03},{cdProduto:5,descricao:'Fora do catálogo',qt:1,vlUnitario:2,vlTotal:2}]});
+    assert.equal(result.itens[0].ncm,'01234567');
+    assert.equal(result.itens[0].codigoBarras,'07890000000001');
+    assert.equal(result.itens[0].descricao,'Nome salvo');
+    assert.equal(result.itens[0].vlUnitario,8.03);
+    assert.equal(result.itens.length,2);
+    assert.equal(result.clienteIe,'ISENTO');
+    await bulkInsertEmpresas([{cdEmpresa:3,nmEmpresa:'API anterior'}],28);
+    assert.equal(JSON.parse((await getEmpresaById(3,28)).raw_json).modeloImpressaoApp,undefined);
+  } finally {sqlite.close();}
+});

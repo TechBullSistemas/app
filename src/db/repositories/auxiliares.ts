@@ -11,6 +11,7 @@ interface MapDef {
 const MAPS: Record<string, MapDef> = {
   empresa: {
     table: 'empresa',
+    raw: true,
     pk: ['cd_empresa', 'holding_id'],
     needsHolding: true,
     columns: [

@@ -114,6 +114,19 @@ export default function PedidoRemotoDetalhe() {
 
     const data: PedidoPdfData = {
       ...empresaPdf,
+      cdCliente: r.cd_cliente,
+      cdTabelaPreco: raw?.cdTabelaPreco,
+      cdCondicaoPagto: raw?.cdCondicaoPagto,
+      cdTipoVenda: raw?.cdTipoVenda,
+      cdFormaPagamento: r.cd_forma_pagamento,
+      representante: raw?.nmFuncionario
+        ? `${r.cd_funcionario} - ${raw.nmFuncionario}`
+        : r.cd_funcionario != null
+          ? String(r.cd_funcionario)
+          : null,
+      dsOrdemCompra: r.ds_ordem_compra,
+      vlDescontoTotal: Number(raw?.vlDescontoTotal) || 0,
+      vlAcrescimoTotal: Number(raw?.vlAcrescimoTotal) || 0,
       numero: r.nr_prevenda,
       clienteNome: r.nm_cliente ?? cli?.nome ?? `Cliente #${r.cd_cliente}`,
       clienteCpfCnpj: cli?.cpf_cnpj ?? null,
@@ -131,6 +144,8 @@ export default function PedidoRemotoDetalhe() {
           descricao: it.ds_produto ?? `Produto #${it.cd_produto}`,
           qt,
           vlUnitario: vlUnit,
+          vlUnitarioOriginal: it.vl_preco_original,
+          vlDesconto: desc,
           vlTotal: qt * vlUnit - desc + acresc,
         };
       }),

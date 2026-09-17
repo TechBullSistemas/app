@@ -105,3 +105,23 @@ Ao receber uma venda nova, a API valida novamente. Reenvios de pedidos já
 recebidos permanecem idempotentes. Após pagamento ou mudança da configuração,
 aguarde a integração DUAPI e use **Buscar informações** para atualizar a base
 local. A migração SQLite é aditiva e não remove pedidos pendentes.
+
+
+## Modelos de impressão
+
+A holding escolhe o modelo em **Integração → engrenagem → Modelo de impressão no app**:
+**Padrão** (modelo anterior) ou **Detalhado com fotos**. Buscar informações recebe a
+configuração junto das empresas e a armazena no SQLite. Sem configuração/API antiga,
+o app mantém Padrão. A escolha vale para pedidos locais, sincronizados, impressão,
+compartilhamento e e-mail automático ao salvar.
+
+Detalhado com fotos usa A4, cabeçalho/rodapé em todas as páginas, representante,
+tabela e condição de pagamento, cadastro completo, NCM e código de barras. Valores
+e descontos vêm do pedido gravado. Imagens locais são incorporadas no PDF; não há
+download durante a impressão. Foto ausente aparece como “Sem foto”. Isso também
+se aplica aos produtos excluídos do download de fotos pela regra de saldo.
+
+As empresas passam a guardar `raw_json` por migração aditiva, sem apagar a outbox.
+Dados cadastrais/fiscais dependem da atualização do serviço Windows do integrador
+e de uma nova sincronização DUAPI → TechBull → app. Publicar primeiro a API e a
+migração, depois o serviço integrador e a OTA (runtime 1.1.3).

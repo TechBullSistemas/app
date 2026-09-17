@@ -9,6 +9,7 @@ export interface EmpresaRow {
   cnpj: string | null;
   logo_url: string | null;
   logo_local: string | null;
+  raw_json?: string | null;
   id_data_sincronizacao_venda_app?: number | null;
 }
 
@@ -103,7 +104,7 @@ export async function getEmpresaById(
   const db = await getDb();
   const row = await db.getFirstAsync<EmpresaRow>(
     `SELECT cd_empresa, holding_id, nome, razao_social, cnpj,
-            logo_url, logo_local
+            logo_url, logo_local, raw_json
        FROM empresa
       WHERE cd_empresa = ? AND holding_id = ?`,
     [cdEmpresa, holdingId],
