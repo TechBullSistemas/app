@@ -299,9 +299,7 @@ export async function calcularItem(
         produto.cdProduto,
         holdingId,
       );
-      contexto.prMargemSeguranca = Number(
-        seguranca?.pr_margem_seguranca ?? 0,
-      );
+      contexto.prMargemSeguranca = Number(seguranca?.pr_margem_seguranca ?? 0);
     } catch {
       // Tabela ainda não sincronizada → mantém o comportamento anterior.
     }
@@ -349,9 +347,10 @@ export async function calcularItem(
   );
   // Modo 'M': PIS/COFINS vêm do imposto_uf da UF da empresa (fallback para o
   // registro da UF do cliente quando a empresa não tem linha cadastrada).
-  const impostoUfPisCofins = empresa.idFormaPrecoVendaProduto === 'M'
-    ? contexto.impostoUfEmpresa ?? contexto.impostoUf
-    : contexto.impostoUf;
+  const impostoUfPisCofins =
+    empresa.idFormaPrecoVendaProduto === 'M'
+      ? (contexto.impostoUfEmpresa ?? contexto.impostoUf)
+      : contexto.impostoUf;
   contexto.prPisSaidaFallback = impostoUfPisCofins?.prPis ?? null;
   contexto.prCofinsSaidaFallback = impostoUfPisCofins?.prCofins ?? null;
   contexto.prIcmsInternoEscolhido = aliquotas.prIcmsInternoEscolhido;
@@ -360,9 +359,16 @@ export async function calcularItem(
   // Passo de preço (8 etapas)
   let vlUnitario: number;
   let vlDescontoUnit = 0;
-  let trace: Awaited<ReturnType<typeof calcularPrecoUnitario>>['trace'] | null = null;
-  if (input.vlUnitarioManual != null && empresa.idBloqueiaAlteracaoPrecoTablet !== 'S') {
-    vlUnitario = roundN(safeNumber(input.vlUnitarioManual), empresa.nrCasaDecimalValorVenda);
+  let trace: Awaited<ReturnType<typeof calcularPrecoUnitario>>['trace'] | null =
+    null;
+  if (
+    input.vlUnitarioManual != null &&
+    empresa.idBloqueiaAlteracaoPrecoTablet !== 'S'
+  ) {
+    vlUnitario = roundN(
+      safeNumber(input.vlUnitarioManual),
+      empresa.nrCasaDecimalValorVenda,
+    );
   } else {
     const pre = await calcularPrecoUnitario({
       contexto,
@@ -410,22 +416,20 @@ export async function calcularItem(
 
   // Base ICMS aproximada (sem reduções)
   const baseBruta = qt * vlUnitario - vlDescontoUnit * qt;
-  const vlBaseIcms = aliquotas.prReducaoIcms > 0
-    ? baseBruta - baseBruta * (aliquotas.prReducaoIcms / 100)
-    : baseBruta;
+  const vlBaseIcms =
+    aliquotas.prReducaoIcms > 0
+      ? baseBruta - baseBruta * (aliquotas.prReducaoIcms / 100)
+      : baseBruta;
   const vlIcms = vlBaseIcms * (aliquotas.prIcmsVenda / 100);
 
-  // Flex: delta gerado pelo desconto/acréscimo no item.
-  // Quando idGeraFlex = "N" o item não impacta saldo.
-  const vlFlexItem = produto.idGeraFlex === 'N'
-    ? 0
-    : roundN(0 - vlDescontoUnit * qt, 2);
+  // Flex is calculated from the captured reference and the final sale price
+  // in the order form, after manual changes. Pricing alone has no reservation.
 
   return {
     vlUnitario: roundN(vlUnitario, empresa.nrCasaDecimalValorVenda),
     vlIpi: roundN(ipi.vlIpi, 2),
     vlSt: roundN(st.vlSubstituicao, 2),
-    vlFlex: vlFlexItem,
+    vlFlex: 0,
     vlDesconto: roundN(vlDescontoUnit * qt, 2),
     vlComissao: roundN(vlComissao, 2),
     prIcmsAplicado: aliquotas.prIcmsVenda,
@@ -474,7 +478,7 @@ export async function calcularPedido(
 
 export * from './types';
 export { resolverTabelaPreco } from './tabelaPrecoResolver';
-export { validacaoFlex } from './flex';
+export { calcularFlexItem, calcularFlexPedido } from './flex';
 export { validacaoVariacaoPreco } from './variacaoPreco';
 export { roundN, safeNumber } from './casasDecimais';
 export {

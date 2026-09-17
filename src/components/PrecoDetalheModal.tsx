@@ -419,12 +419,9 @@ export function PrecoDetalheModal({
                 <View style={styles.kvRow}>
                   <Text style={styles.k}>Comissão</Text>
                   <Text style={styles.v}>
-                    {fmtMoney(pricing.vlComissao)} ({fmtPerc(pricing.prComissao)})
+                    {fmtMoney(pricing.vlComissao)} (
+                    {fmtPerc(pricing.prComissao)})
                   </Text>
-                </View>
-                <View style={styles.kvRow}>
-                  <Text style={styles.k}>Flex no item</Text>
-                  <Text style={styles.v}>{fmtMoney(pricing.vlFlex)}</Text>
                 </View>
                 {pricing.avisos?.length > 0 && (
                   <View style={{ marginTop: 8 }}>

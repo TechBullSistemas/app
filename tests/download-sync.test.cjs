@@ -41,6 +41,7 @@ function harness(options = {}) {
     },
   ];
   const mocks = {
+    './flex': { refreshFlex: async () => {} },
     '@react-native-async-storage/async-storage': {
       __esModule: true,
       default: asyncStorage,

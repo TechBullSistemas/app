@@ -1,3 +1,4 @@
+import { refreshFlex } from './flex';
 import {
   getApi,
   extractApiErrorMessage,
@@ -94,14 +95,20 @@ export async function runUploadSync(
       const vendasPrelim = await listPendingVendas();
       const visitasPrelim = await listPendingVisitas();
       for (const v of vendasPrelim) {
-        if (v.cd_cliente < 0) await ensureClienteOutbox(v.cd_cliente, v.holding_id);
+        if (v.cd_cliente < 0)
+          await ensureClienteOutbox(v.cd_cliente, v.holding_id);
       }
       for (const v of visitasPrelim) {
-        if (v.cd_cliente < 0) await ensureClienteOutbox(v.cd_cliente, v.holding_id);
+        if (v.cd_cliente < 0)
+          await ensureClienteOutbox(v.cd_cliente, v.holding_id);
       }
     } catch {
       // best-effort
     }
+
+    await refreshFlex().catch(() => {
+      /* Existing reservations remain until a complete response. */
+    });
 
     const [clientes, vendas, visitas] = await Promise.all([
       listPendingClientes(),
@@ -168,12 +175,15 @@ export async function runUploadSync(
       setStatusFn: (
         id: string,
         status: 'error',
-        patch?: { lastError?: string },
+        patch?: { lastError?: string; rejected?: boolean },
       ) => Promise<void>,
     ) => {
       const msg = extractApiErrorMessage(err);
       firstError = firstError || msg;
-      await setStatusFn(clientId, 'error', { lastError: msg });
+      await setStatusFn(clientId, 'error', {
+        lastError: msg,
+        rejected: [400, 403, 422].includes((err as any)?.response?.status),
+      });
       store.setUploadItem(clientId, { status: 'error', message: msg });
       if (isUnauthorizedApiError(err)) {
         sessionExpired = true;
@@ -266,15 +276,15 @@ export async function runUploadSync(
                   prevenda.dsFormaPagamento ??
                   prevenda.formaPagamento?.dsFormaPagamento ??
                   null,
-                prevendaItem: (prevenda.prevendaItem ?? payloadEnvio.prevendaItem ?? []).map(
-                  (it: any, idx: number) => ({
-                    ...it,
-                    dsProduto:
-                      it.dsProduto ??
-                      display?.itens?.[idx]?.descricao ??
-                      null,
-                  }),
-                ),
+                prevendaItem: (
+                  prevenda.prevendaItem ??
+                  payloadEnvio.prevendaItem ??
+                  []
+                ).map((it: any, idx: number) => ({
+                  ...it,
+                  dsProduto:
+                    it.dsProduto ?? display?.itens?.[idx]?.descricao ?? null,
+                })),
                 prevendaTitulo:
                   prevenda.prevendaTitulo ?? payloadEnvio.prevendaTitulo ?? [],
                 prevendaFormaPagamento:
@@ -288,13 +298,23 @@ export async function runUploadSync(
             // best-effort: próximo download sync traz a prevenda
           }
         }
-        await deleteOutboxVenda(v.client_id);
+        if (fullPayload.flexVersion === 1) {
+          await setOutboxVendaStatus(v.client_id, 'sent', {
+            cdPrevenda: prevenda?.nrPrevenda ?? null,
+          });
+        } else {
+          await deleteOutboxVenda(v.client_id);
+        }
         store.setUploadItem(v.client_id, { status: 'sent' });
       } catch (err) {
         await handleItemError(err, v.client_id, setOutboxVendaStatus);
         if (sessionExpired) break;
       }
     }
+
+    await refreshFlex().catch(() => {
+      /* Existing reservations remain until a complete response. */
+    });
 
     for (const v of visitasParaEnviar) {
       if (sessionExpired) break;

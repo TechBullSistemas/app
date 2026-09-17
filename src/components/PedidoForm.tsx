@@ -1,3 +1,6 @@
+import { refreshFlex } from '@/sync/flex';
+import { useSyncStore } from '@/stores/sync';
+import { getFlexLocal } from '@/db/repositories/flex';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -18,7 +21,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { ClientePicker } from '@/components/ClientePicker';
 import { ProdutoPicker } from '@/components/ProdutoPicker';
 import { FotoProdutoModal } from '@/components/FotoProdutoModal';
-import { TabelaPrecoPicker, type TabelaPrecoOpt } from '@/components/TabelaPrecoPicker';
+import {
+  TabelaPrecoPicker,
+  type TabelaPrecoOpt,
+} from '@/components/TabelaPrecoPicker';
 import {
   CondicaoPagtoPicker,
   CondicaoOpt,
@@ -30,7 +36,10 @@ import {
 import { CondicaoPrecoPicker } from '@/components/CondicaoPrecoPicker';
 import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
-import { clienteComVendaBloqueada, MENSAGEM_CLIENTE_ATRASADO } from '@/db/clienteAtrasado';
+import {
+  clienteComVendaBloqueada,
+  MENSAGEM_CLIENTE_ATRASADO,
+} from '@/db/clienteAtrasado';
 import { ProdutoRow, getProdutoById } from '@/db/repositories/produtos';
 import { getDb } from '@/db/database';
 import { useSessionStore } from '@/stores/session';
@@ -50,7 +59,8 @@ import { extractApiErrorMessage } from '@/api/client';
 import {
   calcularItem,
   resolverTabelaPreco,
-  validacaoFlex,
+  calcularFlexPedido,
+  calcularFlexItem,
   validacaoVariacaoPreco,
   listarCondicoesPrecoProduto,
   type CondicaoPrecoOpt,
@@ -213,9 +223,38 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     Record<string, CondicaoPrecoOpt[]>
   >({});
   // Override manual da tabela de preço (somente quando empresa permite).
-  const [tabelaPrecoManual, setTabelaPrecoManual] = useState<TabelaPrecoOpt | null>(null);
+  const [tabelaPrecoManual, setTabelaPrecoManual] =
+    useState<TabelaPrecoOpt | null>(null);
   const [cliente, setCliente] = useState<ClienteRow | null>(null);
   const [itens, setItens] = useState<ItemPedido[]>([]);
+  const [flexState, setFlexState] = useState<Awaited<
+    ReturnType<typeof getFlexLocal>
+  > | null>(null);
+  useEffect(() => {
+    let active = true;
+    if (user) {
+      const load = () =>
+        getFlexLocal(user, clientId).then((state) => {
+          if (active) setFlexState(state);
+        });
+      load().catch(() => {
+        if (active) setFlexState(null);
+      });
+      const sync = useSyncStore.getState();
+      if (isOnline && !sync.uploadRunning && !sync.downloadRunning) {
+        refreshFlex()
+          .then(load)
+          .catch(() => {
+            /* Keep the last complete offline state. */
+          });
+      }
+    }
+    return () => {
+      active = false;
+    };
+  }, [user, clientId, isOnline]);
+  const usaFlex = flexState?.enabled ?? user?.idUsaSaldoFlex === true;
+
   const [obs, setObs] = useState('');
   const [dsOrdemCompra, setDsOrdemCompra] = useState('');
 
@@ -272,7 +311,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (!user) return;
     (async () => {
       try {
-        const params = await getEmpresaParametros(user.cdEmpresa, user.holdingId);
+        const params = await getEmpresaParametros(
+          user.cdEmpresa,
+          user.holdingId,
+        );
         setEmpresaParams(params);
       } catch (err) {
         console.warn('PedidoForm: parâmetros do motor indisponíveis', err);
@@ -308,7 +350,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     return resolverTabelaPreco({
       empresa: empresaParams,
       cliente: cliente
-        ? { cdCliente: cliente.cd_cliente, cdTabelaPreco: (cliente as any).cd_tabela_preco ?? null }
+        ? {
+            cdCliente: cliente.cd_cliente,
+            cdTabelaPreco: (cliente as any).cd_tabela_preco ?? null,
+          }
         : null,
       representante: representanteEngine,
     });
@@ -440,9 +485,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (preCdCliente && preHoldingId) {
       (async () => {
         const c = await getClienteById(preCdCliente, preHoldingId);
-        if (c && clienteComVendaBloqueada(c)) Alert.alert('Cliente em atraso', MENSAGEM_CLIENTE_ATRASADO);
+        if (c && clienteComVendaBloqueada(c))
+          Alert.alert('Cliente em atraso', MENSAGEM_CLIENTE_ATRASADO);
         else if (c?.id_ativo === 1) setCliente(c);
-        else if (c) Alert.alert('Cliente inativo', 'Não é permitido realizar novas vendas para este cliente.');
+        else if (c)
+          Alert.alert(
+            'Cliente inativo',
+            'Não é permitido realizar novas vendas para este cliente.',
+          );
       })();
     }
   }, [isEdit, preCdCliente, preHoldingId]);
@@ -479,9 +529,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         const payload = JSON.parse(row.payload || '{}');
         const display = payload.__display || {};
         setObs(display.observacao || payload.obs || '');
-        setDsOrdemCompra(
-          display.dsOrdemCompra || payload.dsOrdemCompra || '',
-        );
+        setDsOrdemCompra(display.dsOrdemCompra || payload.dsOrdemCompra || '');
 
         // Carregar itens enriquecidos com estoque atual
         const rawItens: any[] = display.itens?.length
@@ -562,22 +610,24 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         }
 
         // Restaurar parcelas como editadas (modo manual já que pode ter sido alterado)
-        const pr: ParcelaEditavel[] = (display.parcelas || payload.prevendaTitulo || []).map(
-          (p: any) => {
-            const venc =
-              p.vencimento && p.vencimento.length >= 10
-                ? p.vencimento.slice(0, 10)
-                : p.dtVencto && String(p.dtVencto).length >= 10
-                  ? String(p.dtVencto).slice(0, 10)
-                  : dateToYmd(new Date());
-            return {
-              numero: Number(p.numero ?? p.nrParcela) || 1,
-              vencimento: venc,
-              valor: Number(p.valor ?? p.vlTitulo) || 0,
-              manual: true,
-            };
-          },
-        );
+        const pr: ParcelaEditavel[] = (
+          display.parcelas ||
+          payload.prevendaTitulo ||
+          []
+        ).map((p: any) => {
+          const venc =
+            p.vencimento && p.vencimento.length >= 10
+              ? p.vencimento.slice(0, 10)
+              : p.dtVencto && String(p.dtVencto).length >= 10
+                ? String(p.dtVencto).slice(0, 10)
+                : dateToYmd(new Date());
+          return {
+            numero: Number(p.numero ?? p.nrParcela) || 1,
+            vencimento: venc,
+            valor: Number(p.valor ?? p.vlTitulo) || 0,
+            manual: true,
+          };
+        });
         if (pr.length) {
           setParcelas(pr);
           setParcelasManuais(true);
@@ -608,25 +658,39 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       try {
         const padroes = new Map<number, CondicaoPrecoOpt>();
         for (const item of pendentes) {
-          const opcoes = await carregarCondicoesPreco(item.cdProduto, item.qt, item.rawProduto);
+          const opcoes = await carregarCondicoesPreco(
+            item.cdProduto,
+            item.qt,
+            item.rawProduto,
+          );
           if (cancelado) return;
-          const padrao = escolherCondicaoPrecoPadrao(opcoes, cliente?.cd_condicao_preco_padrao);
+          const padrao = escolherCondicaoPrecoPadrao(
+            opcoes,
+            cliente?.cd_condicao_preco_padrao,
+          );
           if (padrao) padroes.set(item.cdProduto, padrao);
         }
-        if (padroes.size) setItens((prev) => prev.map((item) => {
-          const padrao = padroes.get(item.cdProduto);
-          return padrao && item.cdCondicaoPreco == null
-            ? aplicarCondicaoPreco(item, padrao)
-            : item;
-        }));
+        if (padroes.size)
+          setItens((prev) =>
+            prev.map((item) => {
+              const padrao = padroes.get(item.cdProduto);
+              return padrao && item.cdCondicaoPreco == null
+                ? aplicarCondicaoPreco(item, padrao)
+                : item;
+            }),
+          );
       } finally {
         if (!cancelado) setCalculandoCondicoes(false);
       }
     })();
-    return () => { cancelado = true; };
+    return () => {
+      cancelado = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    itens.map((it) => `${it.cdProduto}:${it.qt}:${it.cdCondicaoPreco ?? ''}`).join('|'),
+    itens
+      .map((it) => `${it.cdProduto}:${it.qt}:${it.cdCondicaoPreco ?? ''}`)
+      .join('|'),
     cliente?.cd_cliente,
     cliente?.cd_condicao_preco_padrao,
     cdTabelaPrecoResolvida,
@@ -643,7 +707,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (!user || !empresaParams) return;
     let cancelado = false;
     (async () => {
-      const novos: Array<{ cdProduto: number; pricing: ResultadoCalculoItem | null }> = [];
+      const novos: Array<{
+        cdProduto: number;
+        pricing: ResultadoCalculoItem | null;
+      }> = [];
       for (const it of itens) {
         if (it.qt <= 0 || !cdTabelaPrecoResolvida) {
           novos.push({ cdProduto: it.cdProduto, pricing: null });
@@ -686,9 +753,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
               cdSituacaoTributaria: it.rawProduto?.cdSituacaoTributaria ?? null,
               prIcms: Number(it.rawProduto?.prIcms ?? 0),
               prIpi: Number(it.rawProduto?.prIpi ?? 0),
-              prMargemSubstituicao: Number(it.rawProduto?.prMargemSubstituicao ?? 0),
+              prMargemSubstituicao: Number(
+                it.rawProduto?.prMargemSubstituicao ?? 0,
+              ),
               prReducaoIcms: Number(it.rawProduto?.prReducaoIcms ?? 0),
-              vlCreditoSubstituicao: Number(it.rawProduto?.vlCreditoSubstituicao ?? 0),
+              vlCreditoSubstituicao: Number(
+                it.rawProduto?.vlCreditoSubstituicao ?? 0,
+              ),
               idGeraFlex: (it.rawProduto?.idGeraFlex ?? 'S') as 'S' | 'N',
               idOrigemProduto: String(it.rawProduto?.idOrigemProduto ?? '0'),
               prComissao: Number(it.rawProduto?.prComissao ?? 0),
@@ -743,7 +814,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     itens
-      .map((i) => `${i.cdProduto}:${i.qt}:${i.vlUnitario}:${i.cdCondicaoPreco ?? ''}`)
+      .map(
+        (i) =>
+          `${i.cdProduto}:${i.qt}:${i.vlUnitario}:${i.cdCondicaoPreco ?? ''}`,
+      )
       .join('|'),
     cdTabelaPrecoResolvida,
     condicaoSel?.cd_condicao,
@@ -757,19 +831,28 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     let totalSt = 0;
     let totalFlex = 0;
     for (const it of itens) {
+      if (usaFlex && it.qt > 0 && it.vlUnitario >= 0)
+        totalFlex += Math.max(
+          0,
+          calcularFlexItem({
+            qtProduto: it.qt,
+            vlUnitario: it.vlUnitario,
+            vlPrecoOriginal: it.vlUnitarioOriginal,
+          }),
+        );
       if (!it.pricing) continue;
       totalIpi += it.pricing.vlIpi;
       totalSt += it.pricing.vlSt;
-      totalFlex += it.pricing.vlFlex;
     }
     return {
       totalIpi: round2(totalIpi),
       totalSt: round2(totalSt),
       totalFlex: round2(totalFlex),
     };
-  }, [itens]);
+  }, [itens, usaFlex]);
 
-  const exibirIpi = empresaParams?.idDestacaIpi === 'S' && totaisFiscais.totalIpi > 0;
+  const exibirIpi =
+    empresaParams?.idDestacaIpi === 'S' && totaisFiscais.totalIpi > 0;
   const exibirSt =
     (empresaParams?.idSubstitutoTributarioIcms === 'S' ||
       empresaParams?.idCalculaSubstituicaoTributariaSempre === 'S') &&
@@ -851,7 +934,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
   function adicionarProduto(p: ProdutoRow, vlUltimaCompra: number | null) {
     if (!(Number(p.vl_venda) > 0)) {
-      Alert.alert('Produto sem preço', 'Selecione somente produtos com valor de venda maior que zero.');
+      Alert.alert(
+        'Produto sem preço',
+        'Selecione somente produtos com valor de venda maior que zero.',
+      );
       return;
     }
     const exist = itens.find((it) => it.cdProduto === p.cd_produto);
@@ -912,7 +998,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   // `textoDigitado` preserva o que o vendedor está digitando (ex.: "2,")
   // enquanto o parse ainda não tem a casa decimal. Chamadas dos botões +/-
   // não passam texto, o que limpa o transitório e volta ao valor normalizado.
-  function alterarQtd(cdProduto: number, novaQtd: number, textoDigitado?: string) {
+  function alterarQtd(
+    cdProduto: number,
+    novaQtd: number,
+    textoDigitado?: string,
+  ) {
     setItens((prev) =>
       prev.map((it) => {
         if (it.cdProduto !== cdProduto) return it;
@@ -1146,7 +1236,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     }
   }
 
-  function aplicarCondicaoPreco(it: ItemPedido, opt: CondicaoPrecoOpt): ItemPedido {
+  function aplicarCondicaoPreco(
+    it: ItemPedido,
+    opt: CondicaoPrecoOpt,
+  ): ItemPedido {
     return {
       ...it,
       cdCondicaoPreco: opt.cdCondicaoPreco,
@@ -1182,9 +1275,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       if (idx < 0) return prev;
 
       return redistribuirParcelasAposEdicao(
-        prev.map((p, indice) =>
-          indice === idx ? { ...p, manual: true } : p,
-        ),
+        prev.map((p, indice) => (indice === idx ? { ...p, manual: true } : p)),
         idx,
         isFinite(novoValor) && novoValor >= 0 ? novoValor : 0,
         totalComAjuste,
@@ -1256,7 +1347,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (!formaPagamentoSel)
       return Alert.alert('Atenção', 'Selecione a forma de pagamento.');
     if (!parcelas.length)
-      return Alert.alert('Atenção', 'Sem parcelas geradas. Verifique a condição.');
+      return Alert.alert(
+        'Atenção',
+        'Sem parcelas geradas. Verifique a condição.',
+      );
 
     if (enviarEmailAoSalvar && !isEdit) {
       if (!isOnline) {
@@ -1317,19 +1411,6 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           );
         }
       }
-
-      if (representanteEngine) {
-        const flex = await validacaoFlex({
-          representante: representanteEngine,
-          holdingId: user.holdingId,
-          vlVenda: total,
-          vlDescontoConcedido: Math.max(0, -totaisFiscais.totalFlex),
-          vlAcrescimoConcedido: Math.max(0, totaisFiscais.totalFlex),
-        });
-        if (!flex.ok) {
-          return Alert.alert('Saldo Flex', flex.motivo ?? 'Saldo Flex insuficiente.');
-        }
-      }
     }
 
     setSalvando(true);
@@ -1358,7 +1439,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         vlPromocao: 0,
         cdCondicaoPreco: it.cdCondicaoPreco ?? null,
         // Operacional não-fiscal — controla o débito de saldo flex no ERP.
-        vlFlex: it.pricing?.vlFlex ?? 0,
+        vlFlex: usaFlex
+          ? calcularFlexItem({
+              qtProduto: it.qt,
+              vlUnitario: it.vlUnitario,
+              vlPrecoOriginal: it.vlUnitarioOriginal,
+            })
+          : 0,
       }));
 
       const prevendaTitulo = parcelasSalvar.map((p) => ({
@@ -1430,7 +1517,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         // Valores nulos/zero não impactam o ERP antigo (defaults preservam).
         cdTabelaPreco: cdTabelaPrecoResolvida,
         cdCondicaoPreco: null,
-        vlFlexTotal: totaisFiscais.totalFlex,
+        vlFlexTotal: usaFlex ? calcularFlexPedido(prevendaItem).total : 0,
+        flexVersion: 1,
+        cdFuncionario: user.userId,
         cdRepresentante: user.cdRepresentante ?? null,
       };
 
@@ -1539,7 +1628,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       router.back();
     } catch (err) {
       console.error(err);
-      Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível salvar o pedido.');
+      Alert.alert(
+        'Erro',
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível salvar o pedido.',
+      );
     } finally {
       setSalvando(false);
     }
@@ -1937,25 +2031,45 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           <Text style={styles.totalLabel}>
             Desconto ({condicaoConfig.prDesconto}%)
           </Text>
-          <Text style={styles.totalValue}>{fmtMoney(totalComAjuste - total)}</Text>
+          <Text style={styles.totalValue}>
+            {fmtMoney(totalComAjuste - total)}
+          </Text>
         </View>
       )}
       {exibirIpi && (
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>IPI (estimativa)</Text>
-          <Text style={styles.totalValue}>{fmtMoney(totaisFiscais.totalIpi)}</Text>
+          <Text style={styles.totalValue}>
+            {fmtMoney(totaisFiscais.totalIpi)}
+          </Text>
         </View>
       )}
       {exibirSt && (
         <View style={styles.totalCard}>
-          <Text style={styles.totalLabel}>Substituição Tributária (estimativa)</Text>
-          <Text style={styles.totalValue}>{fmtMoney(totaisFiscais.totalSt)}</Text>
+          <Text style={styles.totalLabel}>
+            Substituição Tributária (estimativa)
+          </Text>
+          <Text style={styles.totalValue}>
+            {fmtMoney(totaisFiscais.totalSt)}
+          </Text>
         </View>
       )}
-      {totaisFiscais.totalFlex !== 0 && (
+      {usaFlex && (
+        <View style={styles.totalCard}>
+          <Text style={styles.totalLabel}>Flex disponível</Text>
+          <Text style={styles.totalValue}>
+            {flexState?.ready
+              ? fmtMoney(Math.max(0, flexState.disponivel))
+              : 'Sincronize o saldo'}
+          </Text>
+        </View>
+      )}
+      {usaFlex && totaisFiscais.totalFlex > 0 && (
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>Saldo Flex consumido</Text>
-          <Text style={styles.totalValue}>{fmtMoney(totaisFiscais.totalFlex)}</Text>
+          <Text style={styles.totalValue}>
+            {fmtMoney(totaisFiscais.totalFlex)}
+          </Text>
         </View>
       )}
       <View style={styles.totalCard}>
@@ -2001,7 +2115,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       )}
 
       <Pressable
-        style={[styles.button, (salvando || calculandoCondicoes) && { opacity: 0.6 }]}
+        style={[
+          styles.button,
+          (salvando || calculandoCondicoes) && { opacity: 0.6 },
+        ]}
         onPress={salvar}
         disabled={salvando || calculandoCondicoes}
       >
@@ -2023,15 +2140,17 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         onClose={() => setCliPickerOpen(false)}
         onSelect={(novoCliente) => {
           if (novoCliente.cd_cliente !== cliente?.cd_cliente) {
-            setItens((prev) => prev.map((item) => ({
-              ...item,
-              cdCondicaoPreco: null,
-              condicaoPrecoLabel: null,
-              vlMinimo: null,
-              vlUnitario: item.vlUnitarioOriginal,
-              vlInput: undefined,
-              pricing: null,
-            })));
+            setItens((prev) =>
+              prev.map((item) => ({
+                ...item,
+                cdCondicaoPreco: null,
+                condicaoPrecoLabel: null,
+                vlMinimo: null,
+                vlUnitario: item.vlUnitarioOriginal,
+                vlInput: undefined,
+                pricing: null,
+              })),
+            );
           }
           setCliente(novoCliente);
         }}
@@ -2235,7 +2354,12 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'flex-start',
   },
-  itemRow: { flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'flex-end' },
+  itemRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    alignItems: 'flex-end',
+  },
   itemHeaderRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   itemThumb: {
     width: 44,

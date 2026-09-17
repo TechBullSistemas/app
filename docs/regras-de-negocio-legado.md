@@ -1,3 +1,5 @@
+> Documento histórico. Para o Flex atual, consulte [implementação do saldo Flex](analise-implementacao-flex.md). As regras antigas de movimentos e percentuais Flex não são usadas no novo protocolo Duapi.
+
 # Regras de Negócio do App Legado (Duapi Mobile)
 
 > Documento de referência para reimplementação no app TechBull.

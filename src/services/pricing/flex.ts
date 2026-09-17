@@ -1,93 +1,38 @@
-import type { RepresentanteEngine } from './types';
-import { getSaldoEfetivo } from '@/db/repositories/flex';
-import { roundN, safeNumber } from './casasDecimais';
-
-export interface FlexValidacaoInput {
-  representante: RepresentanteEngine;
-  holdingId: number;
-  vlVenda: number; // total da venda (base do %)
-  vlDescontoConcedido: number; // desconto total concedido pelo vendedor
-  vlAcrescimoConcedido: number; // acréscimo (gera flex positivo)
-  draftDelta?: number; // saldo do draft em andamento
+export interface FlexItem {
+  qtProduto: number;
+  vlUnitario: number;
+  vlPrecoOriginal: number;
 }
 
-export interface FlexValidacaoResult {
-  ok: boolean;
-  motivo?: string;
-  vlFlexItem: number; // delta de saldo gerado por essa operação
-  prDescontoAplicado: number;
-  saldoAtual: number;
-  saldoApos: number;
-  prFlexMin: number;
-  prFlexMax: number;
+// Schema prices have three decimal places and quantities five. Use integer
+// arithmetic to keep half-cent rounding identical to the API.
+export function calcularFlexItem(item: FlexItem): number {
+  const values = [item.qtProduto, item.vlUnitario, item.vlPrecoOriginal];
+  if (
+    values.some((v) => !Number.isFinite(v)) ||
+    item.qtProduto <= 0 ||
+    item.vlUnitario < 0 ||
+    item.vlPrecoOriginal < 0
+  ) {
+    throw new Error(
+      'Preço original, preço vendido e quantidade inválidos para o Flex.',
+    );
+  }
+  const delta =
+    Math.round(item.vlPrecoOriginal * 1000) -
+    Math.round(item.vlUnitario * 1000);
+  const product = delta * Math.round(item.qtProduto * 100000);
+  if (!Number.isSafeInteger(product))
+    throw new Error('Valor do pedido acima do limite permitido.');
+  return (Math.sign(product) * Math.round(Math.abs(product) / 1000000)) / 100;
 }
 
-/**
- * Porta de `FLEX_validacao` (legado). Calcula:
- *  - prDescontoAplicado = vlDesc / vlVenda * 100
- *  - vlFlexItem = vlAcrescimoConcedido − vlDescontoConcedido
- *  - Valida prFlexMin/prFlexMax do representante
- *  - Confere se o saldo efetivo (consolidado + outbox + draft) cobre o débito
- */
-export async function validacaoFlex(
-  input: FlexValidacaoInput,
-): Promise<FlexValidacaoResult> {
-  const rep = input.representante;
-  const vlFlexItem = roundN(
-    safeNumber(input.vlAcrescimoConcedido) - safeNumber(input.vlDescontoConcedido),
-    2,
-  );
-  const prDescontoAplicado =
-    input.vlVenda > 0
-      ? roundN(
-          (safeNumber(input.vlDescontoConcedido) / safeNumber(input.vlVenda)) * 100,
-          3,
-        )
-      : 0;
-
-  const saldoAtual = await getSaldoEfetivo(
-    safeNumber(rep.vlSaldoFlex),
-    rep.cdRepresentante,
-    input.holdingId,
-    input.draftDelta ?? 0,
-  );
-  const saldoApos = roundN(saldoAtual + vlFlexItem, 2);
-
-  // Validação de min/max (% do desconto sobre a venda)
-  if (rep.prFlexMax > 0 && prDescontoAplicado > rep.prFlexMax) {
-    return {
-      ok: false,
-      motivo: `Desconto ${prDescontoAplicado}% excede o máximo permitido (${rep.prFlexMax}%).`,
-      vlFlexItem,
-      prDescontoAplicado,
-      saldoAtual,
-      saldoApos,
-      prFlexMin: rep.prFlexMin,
-      prFlexMax: rep.prFlexMax,
-    };
-  }
-
-  // Saldo insuficiente: só bloqueia se for débito (vlFlexItem < 0).
-  if (vlFlexItem < 0 && saldoApos < 0) {
-    return {
-      ok: false,
-      motivo: `Saldo Flex insuficiente (atual ${saldoAtual.toFixed(2)}, ficaria em ${saldoApos.toFixed(2)}).`,
-      vlFlexItem,
-      prDescontoAplicado,
-      saldoAtual,
-      saldoApos,
-      prFlexMin: rep.prFlexMin,
-      prFlexMax: rep.prFlexMax,
-    };
-  }
-
+export function calcularFlexPedido(itens: FlexItem[]) {
+  const valores = itens.map(calcularFlexItem);
+  const cents = valores.map((v) => Math.round(v * 100));
   return {
-    ok: true,
-    vlFlexItem,
-    prDescontoAplicado,
-    saldoAtual,
-    saldoApos,
-    prFlexMin: rep.prFlexMin,
-    prFlexMax: rep.prFlexMax,
+    valores,
+    total: cents.reduce((s, v) => s + v, 0) / 100,
+    consumo: cents.reduce((s, v) => s + Math.max(0, v), 0) / 100,
   };
 }

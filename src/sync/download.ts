@@ -1,3 +1,4 @@
+import { refreshFlex } from './flex';
 import { getApi, extractApiErrorMessage } from '@/api/client';
 import { clearSyncTables } from '@/db/migrations';
 import { getDb } from '@/db/database';
@@ -79,6 +80,9 @@ export async function runDownloadSync() {
     await downloadPendingPhotos({
       onProgress: (done, total) =>
         progress('Fotos dos produtos', steps - 1, done, total),
+    });
+    await refreshFlex().catch((error) => {
+      if (user.idUsaSaldoFlex) throw error;
     });
     await clearIncompleteDownload();
     store.setEntityProgress(DOWNLOAD_STAGES[activeStep].key, {

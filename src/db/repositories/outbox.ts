@@ -1,4 +1,6 @@
 import { getDb } from '../database';
+import { assertFlexSave, withFlexWrite, readFlexSnapshot } from './flex';
+import { useSessionStore } from '../../stores/session';
 import { validarElegibilidadeVenda } from '../vendaElegibilidade';
 
 export type OutboxStatus = 'pending' | 'sending' | 'sent' | 'error';
@@ -52,23 +54,33 @@ export async function enqueueVenda(item: {
   payload: any;
   vlTotal: number | null;
 }) {
-  const db = await getDb();
-  const now = new Date().toISOString();
-  await validarElegibilidadeVenda(db, item.holdingId, item.cdCliente, item.payload.prevendaItem);
-  await db.runAsync(
-    `INSERT OR REPLACE INTO outbox_venda
+  return withFlexWrite(async (db) => {
+    const user = useSessionStore.getState().user;
+    if (!user || user.holdingId !== item.holdingId)
+      throw new Error('Sessão inválida para salvar este pedido.');
+    await assertFlexSave(db, user, item.clientId, item.payload);
+    const now = new Date().toISOString();
+    await validarElegibilidadeVenda(
+      db,
+      item.holdingId,
+      item.cdCliente,
+      item.payload.prevendaItem,
+    );
+    await db.runAsync(
+      `INSERT OR REPLACE INTO outbox_venda
      (client_id, cd_cliente, cd_empresa, holding_id, payload, vl_total, status, attempts, last_error, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?)`,
-    [
-      item.clientId,
-      item.cdCliente,
-      item.cdEmpresa,
-      item.holdingId,
-      JSON.stringify(item.payload),
-      item.vlTotal,
-      now,
-    ],
-  );
+      [
+        item.clientId,
+        item.cdCliente,
+        item.cdEmpresa,
+        item.holdingId,
+        JSON.stringify(item.payload),
+        item.vlTotal,
+        now,
+      ],
+    );
+  });
 }
 
 export async function enqueueVisita(item: {
@@ -100,24 +112,62 @@ export async function updateOutboxVendaPayload(
   payload: any,
   vlTotal: number | null,
 ) {
-  const db = await getDb();
-  const existing = await getOutboxVenda(clientId);
-  if (!existing) throw new Error('Pedido não encontrado.');
-  await validarElegibilidadeVenda(db, existing.holding_id, payload.cdCliente, payload.prevendaItem);
-  await db.runAsync(
-    `UPDATE outbox_venda
-       SET payload = ?,
-           vl_total = ?,
-           status = 'pending',
-           last_error = NULL
-     WHERE client_id = ?`,
-    [JSON.stringify(payload), vlTotal, clientId],
-  );
+  return withFlexWrite(async (db) => {
+    const existing = await db.getFirstAsync<OutboxVendaRow>(
+      'SELECT * FROM outbox_venda WHERE client_id = ?',
+      [clientId],
+    );
+    if (!existing) throw new Error('Pedido não encontrado ou já enviado.');
+    await assertEditable(existing);
+    const user = useSessionStore.getState().user;
+    if (
+      !user ||
+      user.holdingId !== existing.holding_id ||
+      Number(payload.cdFuncionario) !== user.userId
+    )
+      throw new Error('Este pedido pertence a outro vendedor.');
+    await validarElegibilidadeVenda(
+      db,
+      existing.holding_id,
+      payload.cdCliente,
+      payload.prevendaItem,
+    );
+    await assertFlexSave(db, user, clientId, payload);
+    await db.runAsync(
+      `UPDATE outbox_venda SET payload = ?, vl_total = ?, status = 'pending', last_error = NULL WHERE client_id = ?`,
+      [JSON.stringify(payload), vlTotal, clientId],
+    );
+  });
+}
+
+async function assertEditable(row: OutboxVendaRow) {
+  const payload = JSON.parse(row.payload);
+  const user = useSessionStore.getState().user;
+  const snapshot = user ? await readFlexSnapshot(await getDb(), user) : null;
+  const enabled = snapshot?.enabled ?? user?.idUsaSaldoFlex ?? false;
+  if (
+    payload.flexVersion === 1 &&
+    (row.status === 'sending' ||
+      row.status === 'sent' ||
+      (enabled && row.attempts > 0))
+  ) {
+    throw new Error(
+      'Este pedido já teve uma tentativa de envio. Use Enviar informações para confirmar o recebimento antes de alterar ou excluir.',
+    );
+  }
 }
 
 export async function deleteOutboxVenda(clientId: string) {
-  const db = await getDb();
-  await db.runAsync('DELETE FROM outbox_venda WHERE client_id = ?', [clientId]);
+  return withFlexWrite(async (db) => {
+    const row = await db.getFirstAsync<OutboxVendaRow>(
+      'SELECT * FROM outbox_venda WHERE client_id = ?',
+      [clientId],
+    );
+    if (row) await assertEditable(row);
+    await db.runAsync('DELETE FROM outbox_venda WHERE client_id = ?', [
+      clientId,
+    ]);
+  });
 }
 
 export async function getOutboxVenda(
@@ -133,7 +183,9 @@ export async function getOutboxVenda(
 
 export async function listOutboxVendas(): Promise<OutboxVendaRow[]> {
   const db = await getDb();
-  return db.getAllAsync<OutboxVendaRow>('SELECT * FROM outbox_venda ORDER BY created_at');
+  return db.getAllAsync<OutboxVendaRow>(
+    "SELECT * FROM outbox_venda WHERE status <> 'sent' ORDER BY created_at",
+  );
 }
 
 export async function listOutboxVendasByCliente(
@@ -143,7 +195,7 @@ export async function listOutboxVendasByCliente(
   const db = await getDb();
   return db.getAllAsync<OutboxVendaRow>(
     `SELECT * FROM outbox_venda
-     WHERE cd_cliente = ? AND holding_id = ?
+     WHERE cd_cliente = ? AND holding_id = ? AND status <> 'sent'
      ORDER BY created_at DESC`,
     [cdCliente, holdingId],
   );
@@ -151,7 +203,9 @@ export async function listOutboxVendasByCliente(
 
 export async function listOutboxVisitas(): Promise<OutboxVisitaRow[]> {
   const db = await getDb();
-  return db.getAllAsync<OutboxVisitaRow>('SELECT * FROM outbox_visita ORDER BY created_at');
+  return db.getAllAsync<OutboxVisitaRow>(
+    'SELECT * FROM outbox_visita ORDER BY created_at',
+  );
 }
 
 export async function listPendingVendas(): Promise<OutboxVendaRow[]> {
@@ -171,20 +225,25 @@ export async function listPendingVisitas(): Promise<OutboxVisitaRow[]> {
 export async function setOutboxVendaStatus(
   clientId: string,
   status: OutboxStatus,
-  patch?: { lastError?: string | null; cdPrevenda?: number | null },
+  patch?: {
+    lastError?: string | null;
+    cdPrevenda?: number | null;
+    rejected?: boolean;
+  },
 ) {
   const db = await getDb();
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE outbox_venda
        SET status = ?,
-           attempts = attempts + CASE WHEN ? IN ('pending','sending') THEN 0 ELSE 1 END,
+           attempts = CASE WHEN ? = 1 THEN 0 ELSE attempts + CASE WHEN ? = 'sending' THEN 1 ELSE 0 END END,
            last_error = ?,
            sent_at = CASE WHEN ? = 'sent' THEN ? ELSE sent_at END,
            cd_prevenda = COALESCE(?, cd_prevenda)
      WHERE client_id = ?`,
     [
       status,
+      patch?.rejected ? 1 : 0,
       status,
       patch?.lastError ?? null,
       status,
@@ -195,7 +254,10 @@ export async function setOutboxVendaStatus(
   );
 }
 
-export async function updateOutboxVisitaPayload(clientId: string, payload: any) {
+export async function updateOutboxVisitaPayload(
+  clientId: string,
+  payload: any,
+) {
   const db = await getDb();
   await db.runAsync(
     `UPDATE outbox_visita
@@ -209,7 +271,9 @@ export async function updateOutboxVisitaPayload(clientId: string, payload: any) 
 
 export async function deleteOutboxVisita(clientId: string) {
   const db = await getDb();
-  await db.runAsync('DELETE FROM outbox_visita WHERE client_id = ?', [clientId]);
+  await db.runAsync('DELETE FROM outbox_visita WHERE client_id = ?', [
+    clientId,
+  ]);
 }
 
 export async function setOutboxVisitaStatus(
@@ -252,7 +316,10 @@ export async function enqueueCliente(item: {
   );
 }
 
-export async function updateOutboxClientePayload(clientId: string, payload: any) {
+export async function updateOutboxClientePayload(
+  clientId: string,
+  payload: any,
+) {
   const db = await getDb();
   await db.runAsync(
     `UPDATE outbox_cliente
@@ -280,7 +347,9 @@ export async function listPendingClientes(): Promise<OutboxClienteRow[]> {
 
 export async function deleteOutboxCliente(clientId: string) {
   const db = await getDb();
-  await db.runAsync('DELETE FROM outbox_cliente WHERE client_id = ?', [clientId]);
+  await db.runAsync('DELETE FROM outbox_cliente WHERE client_id = ?', [
+    clientId,
+  ]);
 }
 
 export async function setOutboxClienteStatus(
@@ -318,7 +387,7 @@ export async function setOutboxClienteStatus(
 export async function purgeSentOutbox() {
   const db = await getDb();
   await db.execAsync(
-    `DELETE FROM outbox_venda    WHERE status = 'sent';
+    `DELETE FROM outbox_venda    WHERE status = 'sent' AND COALESCE(json_extract(payload, '$.flexVersion'), 0) <> 1;
      DELETE FROM outbox_visita   WHERE status = 'sent';
      DELETE FROM outbox_cliente  WHERE status = 'sent';`,
   );

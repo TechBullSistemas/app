@@ -453,12 +453,13 @@ CREATE TABLE IF NOT EXISTS condicao_pagto_preco (
   PRIMARY KEY (cd_condicao_pagto, cd_tabela_preco_condicao, holding_id)
 );
 
-CREATE TABLE IF NOT EXISTS representante_saldo_flex (
-  cd_representante INTEGER NOT NULL,
+DROP TABLE IF EXISTS representante_saldo_flex;
+DROP TABLE IF EXISTS flex_movto;
+CREATE TABLE IF NOT EXISTS flex_estado (
   holding_id INTEGER NOT NULL,
-  vl_saldo_flex REAL DEFAULT 0,
-  dt_manutencao TEXT,
-  PRIMARY KEY (cd_representante, holding_id)
+  user_id INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (holding_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS usuario_tabela_preco (
@@ -467,20 +468,6 @@ CREATE TABLE IF NOT EXISTS usuario_tabela_preco (
   holding_id INTEGER NOT NULL,
   dt_ult_alteracao TEXT,
   PRIMARY KEY (holding_id, cd_usuario, cd_tabela_preco)
-);
-
-CREATE TABLE IF NOT EXISTS flex_movto (
-  nr_movto INTEGER PRIMARY KEY AUTOINCREMENT,
-  cd_empresa INTEGER NOT NULL,
-  nr_prevenda INTEGER NOT NULL,
-  id_origem TEXT DEFAULT 'V',
-  cd_representante INTEGER NOT NULL,
-  cd_produto INTEGER,
-  dt_movto TEXT,
-  id_operacao TEXT DEFAULT 'D',
-  vl_movto REAL DEFAULT 0,
-  id_tipo TEXT DEFAULT 'N',
-  holding_id INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS produto_custo_variavel (
@@ -533,11 +520,36 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   );
 
   // Cliente: tabela de preço preferencial usada pelo motor de precificação.
-  await ensureColumn(db, 'cliente', 'cd_tabela_preco', 'cd_tabela_preco INTEGER');
-  await ensureColumn(db, 'cliente', 'cd_tabela_preco_condicao', 'cd_tabela_preco_condicao INTEGER');
-  await ensureColumn(db, 'cliente', 'cd_condicao_preco_padrao', 'cd_condicao_preco_padrao INTEGER');
-  await ensureColumn(db, 'cliente', 'id_bloqueia_venda_cliente_atrasado_app', 'id_bloqueia_venda_cliente_atrasado_app INTEGER NOT NULL DEFAULT 0');
-  await ensureColumn(db, 'cliente', 'dt_primeiro_titulo_aberto', 'dt_primeiro_titulo_aberto TEXT');
+  await ensureColumn(
+    db,
+    'cliente',
+    'cd_tabela_preco',
+    'cd_tabela_preco INTEGER',
+  );
+  await ensureColumn(
+    db,
+    'cliente',
+    'cd_tabela_preco_condicao',
+    'cd_tabela_preco_condicao INTEGER',
+  );
+  await ensureColumn(
+    db,
+    'cliente',
+    'cd_condicao_preco_padrao',
+    'cd_condicao_preco_padrao INTEGER',
+  );
+  await ensureColumn(
+    db,
+    'cliente',
+    'id_bloqueia_venda_cliente_atrasado_app',
+    'id_bloqueia_venda_cliente_atrasado_app INTEGER NOT NULL DEFAULT 0',
+  );
+  await ensureColumn(
+    db,
+    'cliente',
+    'dt_primeiro_titulo_aberto',
+    'dt_primeiro_titulo_aberto TEXT',
+  );
   // Cliente: condição de pagamento padrão para pré-selecionar no pedido.
   await ensureColumn(
     db,
@@ -625,7 +637,10 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
   );
   const empresaFlags: Array<[string, string]> = [
     ['id_destaca_ipi', "id_destaca_ipi TEXT DEFAULT 'N'"],
-    ['id_substituto_tributario_icms', "id_substituto_tributario_icms TEXT DEFAULT 'N'"],
+    [
+      'id_substituto_tributario_icms',
+      "id_substituto_tributario_icms TEXT DEFAULT 'N'",
+    ],
     [
       'id_calcula_substituicao_tributaria_sempre',
       "id_calcula_substituicao_tributaria_sempre TEXT DEFAULT 'N'",
@@ -634,8 +649,14 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
       'id_regime_utiliza_reducao_base_substituicao',
       "id_regime_utiliza_reducao_base_substituicao TEXT DEFAULT 'N'",
     ],
-    ['id_utiliza_mva_externo_venda', "id_utiliza_mva_externo_venda TEXT DEFAULT 'N'"],
-    ['id_utiliza_st_diferenca_icms', "id_utiliza_st_diferenca_icms TEXT DEFAULT 'N'"],
+    [
+      'id_utiliza_mva_externo_venda',
+      "id_utiliza_mva_externo_venda TEXT DEFAULT 'N'",
+    ],
+    [
+      'id_utiliza_st_diferenca_icms',
+      "id_utiliza_st_diferenca_icms TEXT DEFAULT 'N'",
+    ],
     [
       'id_utiliza_reducao_icms_fora_estado',
       "id_utiliza_reducao_icms_fora_estado TEXT DEFAULT 'N'",
@@ -669,7 +690,10 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
       "id_produto_controle_variacao_preco TEXT DEFAULT 'D'",
     ],
     ['pr_margem_lucro_minimo', 'pr_margem_lucro_minimo REAL DEFAULT 0'],
-    ['nr_casa_decimal_valor_venda', 'nr_casa_decimal_valor_venda INTEGER DEFAULT 2'],
+    [
+      'nr_casa_decimal_valor_venda',
+      'nr_casa_decimal_valor_venda INTEGER DEFAULT 2',
+    ],
     [
       'id_bloqueia_alteracao_preco_tablet',
       "id_bloqueia_alteracao_preco_tablet TEXT DEFAULT 'N'",
@@ -762,7 +786,12 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     'id_ultima_venda',
     'id_ultima_venda INTEGER DEFAULT 0',
   );
-  await ensureColumn(db, 'condicao_preco', 'vl_valor', 'vl_valor REAL DEFAULT 0');
+  await ensureColumn(
+    db,
+    'condicao_preco',
+    'vl_valor',
+    'vl_valor REAL DEFAULT 0',
+  );
 
   // ImpostoUf: reduções internas variam pelo destino da venda. Mantemos o
   // campo legado como revenda e usamos NULL nos novos campos para distinguir
@@ -942,9 +971,7 @@ const TABLES = [
   'produto_desconto',
   'produto_seguranca',
   'condicao_pagto_preco',
-  'representante_saldo_flex',
   'usuario_tabela_preco',
-  'flex_movto',
   'produto_custo_variavel',
 ];
 

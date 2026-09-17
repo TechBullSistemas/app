@@ -24,6 +24,7 @@ export interface SessionUser {
   holdingName?: string | null;
   /** Holding com integração duaPI habilitada (`Holding.idIntegradorDuapi`). */
   idIntegradorDuapi?: boolean;
+  idUsaSaldoFlex?: boolean;
   // Campos opcionais usados pelo motor de precificação. O backend antigo
   // (sem essas regras) não os envia, então mantemos como opcionais.
   cdEstado?: string | null;
