@@ -81,9 +81,7 @@ export async function runDownloadSync() {
       onProgress: (done, total) =>
         progress('Fotos dos produtos', steps - 1, done, total),
     });
-    await refreshFlex().catch((error) => {
-      if (user.idUsaSaldoFlex) throw error;
-    });
+    await refreshFlex();
     await clearIncompleteDownload();
     store.setEntityProgress(DOWNLOAD_STAGES[activeStep].key, {
       status: 'done',

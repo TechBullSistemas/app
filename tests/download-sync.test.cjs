@@ -41,7 +41,12 @@ function harness(options = {}) {
     },
   ];
   const mocks = {
-    './flex': { refreshFlex: async () => {} },
+    './flex': {
+      refreshFlex: async () => {
+        if (options.failFlex)
+          throw new Error('Falha ao conferir configuração e saldo Flex');
+      },
+    },
     '@react-native-async-storage/async-storage': {
       __esModule: true,
       default: asyncStorage,
@@ -229,4 +234,12 @@ test('progresso inicia em zero, avança por etapas e reserva 100% para conclusã
   assert.equal(percent({ step: 1, steps: 4, done: 250, total: 500 }), 37);
   assert.equal(percent({ step: 2, steps: 4, done: 0, total: 0 }), 50);
   assert.equal(percent({ step: 3, steps: 4, done: 10, total: 10 }), 99);
+});
+
+test('configuração Flex precisa ser confirmada mesmo quando a sessão antiga não conhece a opção', async () => {
+  const h = harness({ failFlex: true });
+  await assert.rejects(h.run(), /Falha ao conferir configuração e saldo Flex/);
+  assert.equal(h.sync.getState().downloadNeedsRecovery, true);
+  assert.equal(await h.checkpoint.hasIncompleteDownload(), true);
+  assert.equal(h.sync.getState().downloadFinishedAt, null);
 });
