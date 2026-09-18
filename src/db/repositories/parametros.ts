@@ -1,4 +1,8 @@
 import { getDb } from '../database';
+import {
+  lerIncrementoValor,
+  PASSO_VALOR_PADRAO,
+} from '../../services/pricing/incrementoValor';
 
 // Espelho da `Util_Parametro` do legado: lê os flags da empresa e devolve
 // getters tipados com os mesmos nomes do Prisma para o resto do app não
@@ -33,6 +37,8 @@ export interface EmpresaParametros {
   idPermiteAlterarValorProdutoPalm: 'S' | 'A' | 'N';
   idPermiteAlterarFormaPagamentoApp: boolean;
   idDataSincronizacaoVendaApp: boolean;
+  idMostraIncrementoValorApp: boolean;
+  vlIncrementoValorApp: number;
   idVerificaTambemColunaLiberadoInternet: boolean;
   // Fórmula dinâmica
   dsFuncaoCalculoPrecoVenda: string | null;
@@ -73,6 +79,8 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   idPermiteAlterarValorProdutoPalm: 'S',
   idPermiteAlterarFormaPagamentoApp: true,
   idDataSincronizacaoVendaApp: false,
+  idMostraIncrementoValorApp: false,
+  vlIncrementoValorApp: PASSO_VALOR_PADRAO,
   idVerificaTambemColunaLiberadoInternet: false,
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
@@ -106,6 +114,7 @@ export async function getEmpresaParametros(
   return {
     cdEmpresa,
     holdingId,
+    ...lerIncrementoValor(row.raw_json),
     cdEstado: s(row.cd_estado, null),
     cdTabelaPrecoPadrao:
       row.cd_tabela_preco_padrao != null
@@ -190,8 +199,7 @@ export async function getEmpresaParametros(
     ),
     idPermiteAlterarFormaPagamentoApp:
       row.id_permite_alterar_forma_pagamento_app !== 0,
-    idDataSincronizacaoVendaApp:
-      row.id_data_sincronizacao_venda_app === 1,
+    idDataSincronizacaoVendaApp: row.id_data_sincronizacao_venda_app === 1,
     idVerificaTambemColunaLiberadoInternet:
       row.id_verifica_tambem_coluna_liberado_internet === 1,
     dsFuncaoCalculoPrecoVenda: s(

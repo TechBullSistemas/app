@@ -191,3 +191,48 @@ test('modelo de impressão e cadastro completo sobrevivem à migração e à sin
     assert.equal(JSON.parse((await getEmpresaById(3,28)).raw_json).modeloImpressaoApp,undefined);
   } finally {sqlite.close();}
 });
+
+test('incremento por holding persiste offline, desativa na próxima busca e API antiga permanece sem botões', async () => {
+  const { sqlite, db, fromSrc } = harness();
+  try {
+    await fromSrc('db/migrations.ts').runMigrations(db);
+    const { bulkInsertEmpresas } = fromSrc('db/repositories/empresas.ts');
+    const { getEmpresaParametros } = fromSrc('db/repositories/parametros.ts');
+    const enabled = { cdEmpresa: 1, idMostraIncrementoValorApp: true, vlIncrementoValorApp: 0.05 };
+    await bulkInsertEmpresas([enabled], 28);
+    await bulkInsertEmpresas([{ cdEmpresa: 1 }], 9);
+    const read = (holding) => getEmpresaParametros(1, holding);
+    assert.equal((await read(28)).idMostraIncrementoValorApp, true);
+    assert.equal((await read(28)).vlIncrementoValorApp, 0.05);
+    assert.equal((await read(9)).idMostraIncrementoValorApp, false);
+    assert.equal((await read(99)).idMostraIncrementoValorApp, false);
+    await bulkInsertEmpresas([{ ...enabled, vlIncrementoValorApp: 0.10 }], 28);
+    assert.equal((await read(28)).vlIncrementoValorApp, 0.10);
+    await bulkInsertEmpresas([{ ...enabled, idMostraIncrementoValorApp: false }], 28);
+    assert.equal((await read(28)).idMostraIncrementoValorApp, false);
+    await bulkInsertEmpresas([enabled], 28);
+    await bulkInsertEmpresas([{ cdEmpresa: 1 }], 28);
+    assert.equal((await read(28)).idMostraIncrementoValorApp, false);
+    sqlite.exec("UPDATE empresa SET raw_json='inválido' WHERE holding_id=28");
+    assert.equal((await read(28)).idMostraIncrementoValorApp, false);
+  } finally { sqlite.close(); }
+});
+
+test('passo de cinco centavos preserva precisão e não produz preço negativo', () => {
+  const { sqlite, fromSrc } = harness();
+  try {
+    const { incrementarValor, lerIncrementoValor } = fromSrc('services/pricing/incrementoValor.ts');
+    assert.equal(incrementarValor(6.55, 0.05, 1), 6.60);
+    assert.equal(incrementarValor(6.55, 0.05, -1), 6.50);
+    assert.equal(incrementarValor(6.555, 0.05, 1), 6.605);
+    let valor = 6.55;
+    for (let i = 0; i < 100; i++) valor = incrementarValor(valor, 0.05, 1);
+    assert.equal(valor, 11.55);
+    for (let i = 0; i < 100; i++) valor = incrementarValor(valor, 0.05, -1);
+    assert.equal(valor, 6.55);
+    assert.equal(incrementarValor(0.03, 0.05, -1), 0);
+    for (const passo of [0, -0.05, 0.005, '0.05', null, 1000000])
+      assert.equal(lerIncrementoValor(JSON.stringify({ idMostraIncrementoValorApp: true, vlIncrementoValorApp: passo })).idMostraIncrementoValorApp, false);
+    assert.equal(lerIncrementoValor('{"idMostraIncrementoValorApp":"true","vlIncrementoValorApp":0.05}').idMostraIncrementoValorApp, false);
+  } finally { sqlite.close(); }
+});

@@ -1,3 +1,5 @@
+import { PrecoUnitarioInput } from '@/components/PrecoUnitarioInput';
+import { incrementarValor } from '@/services/pricing/incrementoValor';
 import { refreshFlex } from '@/sync/flex';
 import { useSyncStore } from '@/stores/sync';
 import { getFlexLocal } from '@/db/repositories/flex';
@@ -307,20 +309,25 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     ReturnType<typeof getEmpresaParametros>
   > | null>(null);
 
+  const downloadFinishedAt = useSyncStore((state) => state.downloadFinishedAt);
   useEffect(() => {
-    if (!user) return;
+    if (!user || useSyncStore.getState().downloadRunning) return;
+    let active = true;
     (async () => {
       try {
         const params = await getEmpresaParametros(
           user.cdEmpresa,
           user.holdingId,
         );
-        setEmpresaParams(params);
+        if (active) setEmpresaParams(params);
       } catch (err) {
         console.warn('PedidoForm: parâmetros do motor indisponíveis', err);
       }
     })();
-  }, [user]);
+    return () => {
+      active = false;
+    };
+  }, [user, downloadFinishedAt]);
 
   // Dados do representante vêm direto da sessão (auth/login | auth/me).
   // Não há mais sync de tabela `representante`: tudo vive no User do ERP.
@@ -472,6 +479,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   //   "S" — livre  |  "A" — só aumentar  |  "N" — readonly
   const modoAlteracaoPreco =
     empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
+  const mostrarIncrementoValor =
+    empresaParams?.holdingId === user?.holdingId &&
+    empresaParams?.cdEmpresa === user?.cdEmpresa &&
+    empresaParams?.idMostraIncrementoValorApp === true;
+  const passoValor = empresaParams?.vlIncrementoValorApp ?? 0.05;
   const precoReadonly = modoAlteracaoPreco === 'N';
   const precoSomenteAumenta = modoAlteracaoPreco === 'A';
 
@@ -1081,30 +1093,42 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
    * menor que `vlMinimo` (= vl_valor da condição de preço selecionada),
    * pisa no mínimo e exibe o aviso. Disparado em `onEndEditing` (blur).
    */
-  function validarPrecoBlur(cdProduto: number) {
+  function validarPrecoBlur(cdProduto: number, direcao?: -1 | 1) {
+    if (direcao && (!mostrarIncrementoValor || precoBloqueado || precoReadonly))
+      return;
     const modo = empresaParams?.idPermiteAlterarValorProdutoPalm ?? 'S';
     const prDescontoMax = resolvePrDescontoMax(user?.prDescontoMax);
     setItens((prev) =>
       prev.map((it) => {
         if (it.cdProduto !== cdProduto) return it;
-        let next = it;
+        const candidato = direcao
+          ? {
+              ...it,
+              vlUnitario: incrementarValor(it.vlUnitario, passoValor, direcao),
+            }
+          : it;
+        let next = candidato;
 
         if (
           modo === 'A' &&
-          it.vlMinimo != null &&
-          it.vlUnitario < it.vlMinimo
+          candidato.vlMinimo != null &&
+          candidato.vlUnitario < candidato.vlMinimo
         ) {
           Alert.alert(
             'Valor abaixo do mínimo',
             `Permitido somente alterar para valores superiores a ${fmtMoney(
-              it.vlMinimo,
+              candidato.vlMinimo,
             )}.`,
           );
-          next = { ...it, vlUnitario: it.vlMinimo, vlInput: undefined };
-        } else if (it.vlInput === undefined) {
+          next = {
+            ...candidato,
+            vlUnitario: candidato.vlMinimo,
+            vlInput: undefined,
+          };
+        } else if (it.vlInput === undefined && !direcao) {
           return it;
         } else {
-          next = { ...it, vlInput: undefined };
+          next = { ...candidato, vlInput: undefined };
         }
 
         const editadoManual = next.vlUnitario !== next.vlUnitarioOriginal;
@@ -1733,8 +1757,19 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                   ) : null}
                 </View>
               </View>
-              <View style={styles.itemRow}>
-                <View style={{ flex: 1.7 }}>
+              <View
+                style={[
+                  styles.itemRow,
+                  mostrarIncrementoValor && { flexWrap: 'wrap' },
+                ]}
+              >
+                <View
+                  style={
+                    mostrarIncrementoValor
+                      ? { flexGrow: 1, flexBasis: 144 }
+                      : { flex: 1.7 }
+                  }
+                >
                   <Text style={styles.itemLbl}>Qtd</Text>
                   <View style={styles.qtdBox}>
                     <Pressable
@@ -1780,11 +1815,23 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     </Pressable>
                   </View>
                 </View>
-                <View style={{ flex: 1 }}>
+                <View
+                  style={
+                    mostrarIncrementoValor
+                      ? { flexGrow: 1, flexBasis: 200 }
+                      : { flex: 1 }
+                  }
+                >
                   <Text style={styles.itemLbl}>
                     Vl. unit.{precoBloqueado || precoSomenteAumenta ? ' 🔒' : ''}
                   </Text>
-                  <TextInput
+                  <PrecoUnitarioInput
+                    mostrarBotoes={mostrarIncrementoValor}
+                    passo={passoValor}
+                    valor={it.vlUnitario}
+                    onIncrementar={(direcao) =>
+                      validarPrecoBlur(it.cdProduto, direcao)
+                    }
                     style={[
                       styles.itemInput,
                       (precoBloqueado || precoReadonly) && {
@@ -1794,7 +1841,16 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     ]}
                     keyboardType="decimal-pad"
                     editable={!precoBloqueado && !precoReadonly}
-                    value={it.vlInput ?? String(it.vlUnitario)}
+                    value={
+                      it.vlInput ??
+                      (mostrarIncrementoValor
+                        ? it.vlUnitario.toLocaleString('pt-BR', {
+                            useGrouping: false,
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 6,
+                          })
+                        : String(it.vlUnitario))
+                    }
                     onChangeText={(t) =>
                       alterarPreco(
                         it.cdProduto,
