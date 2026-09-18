@@ -19,8 +19,8 @@ export function calcularFlexItem(item: FlexItem): number {
     );
   }
   const delta =
-    Math.round(item.vlPrecoOriginal * 1000) -
-    Math.round(item.vlUnitario * 1000);
+    Math.round(item.vlUnitario * 1000) -
+    Math.round(item.vlPrecoOriginal * 1000);
   const product = delta * Math.round(item.qtProduto * 100000);
   if (!Number.isSafeInteger(product))
     throw new Error('Valor do pedido acima do limite permitido.');
@@ -33,6 +33,6 @@ export function calcularFlexPedido(itens: FlexItem[]) {
   return {
     valores,
     total: cents.reduce((s, v) => s + v, 0) / 100,
-    consumo: cents.reduce((s, v) => s + Math.max(0, v), 0) / 100,
+    consumo: cents.reduce((s, v) => s + Math.max(0, -v), 0) / 100,
   };
 }

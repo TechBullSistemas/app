@@ -101,16 +101,34 @@ test('total por quantidade, centavos, quantidade fracionária e acréscimo sem c
   const h = harness();
   const { calcularFlexPedido } = h.src('services/pricing/flex');
   assert.deepEqual(calcularFlexPedido([item(100, 60, 3)]), {
-    valores: [120],
-    total: 120,
+    valores: [-120],
+    total: -120,
     consumo: 120,
   });
   assert.equal(calcularFlexPedido([item(1.005, 1)]).consumo, 0.01);
   assert.equal(calcularFlexPedido([item(100, 0, 0.00005)]).consumo, 0.01);
   assert.deepEqual(calcularFlexPedido([item(100, 60), item(100, 150)]), {
-    valores: [40, -50],
-    total: -10,
+    valores: [-40, 50],
+    total: 10,
     consumo: 40,
+  });
+  h.sqlite.close();
+});
+
+test('acréscimo positivo não libera descontos; pedido antigo mantém reserva após atualização', async () => {
+  const h = harness();
+  await h.src('db/migrations').runMigrations(h.db);
+  const flex = h.src('db/repositories/flex');
+  const outbox = h.src('db/repositories/outbox');
+  await flex.storeFlexSnapshot(h.user, snapshot(1, 100, 0));
+  const antigo = order('antigo', [{ ...item(100, 60), vlFlex: 40 }]);
+  antigo.payload.vlFlexTotal = 40;
+  await outbox.enqueueVenda(antigo);
+  await outbox.enqueueVenda(order('acrescimo', [item(100, 140, 3)]));
+  assert.equal((await flex.getFlexLocal(h.user)).disponivel, 60);
+  await assert.rejects(outbox.enqueueVenda(order('excesso', [item(100, 39)])), /insuficiente/);
+  assert.deepEqual(h.src('services/pricing/flex').calcularFlexPedido([item(100, 140, 3)]), {
+    valores: [120], total: 120, consumo: 0,
   });
   h.sqlite.close();
 });

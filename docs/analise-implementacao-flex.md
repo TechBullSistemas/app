@@ -1,12 +1,12 @@
 # Implementação do saldo Flex — 17/09/2026
 
-Contrato confirmado: `nr_pedido` preenchido em `pedido_venda_api` significa que o Duapi já calculou o Flex. Quantidade 3, original R$100 e vendido R$60 produzem `vl_flex=120`, total do item.
+Contrato confirmado: `nr_pedido` preenchido em `pedido_venda_api` significa que o Duapi já calculou o Flex. Quantidade 3, original R$100 e vendido R$60 produzem `vl_flex=-120`, total do item.
 
 ## Funcionamento
 
 - Configuração por holding **Usa saldo Flex**, desligada por padrão, enviada no login e na sincronização.
 - Saldo oficial vem exclusivamente de `representante.vl_saldo_flex` para `users.vl_saldo_flex`. Não usar as antigas tabelas `representante_saldo_flex`/`flex_movto`.
-- API guarda consumo e confirmação na própria pré-venda. Desconto por item é `(original - vendido) × quantidade`, arredondado em centavos; acréscimo é negativo no envio, mas não gera crédito antecipado no limite local.
+- API guarda consumo e confirmação na própria pré-venda. O valor enviado por item é `(vendido - original) × quantidade`, arredondado em centavos: desconto negativo e acréscimo positivo. O consumo é o valor absoluto dos descontos; acréscimos não geram crédito antecipado no limite local. Reservas de pedidos da versão anterior continuam calculadas pelos preços, sem depender do sinal salvo.
 - O Integrador lê saldo e confirmações numa única consulta transacional ODBC. A API aplica ambos atomicamente, rejeitando revisões ultrapassadas. Recebimento no TECHBULL e envio à fila do Duapi não liberam reservas.
 - SQLite guarda o último estado completo por holding/vendedor em `flex_estado`, fora das tabelas limpas pela importação. Pedidos ainda exclusivos do aparelho são somados ao consumo remoto. IDs conhecidos evitam dupla contagem.
 - Recibos de envio permanecem na outbox até uma resposta completa reconhecer o pedido. Edição substitui reserva; exclusão local libera. Tentativa de envio sem resposta conclusiva protege contra edição/exclusão até reenviar e confirmar. Uma rejeição de validação permite corrigir.

@@ -834,7 +834,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       if (usaFlex && it.qt > 0 && it.vlUnitario >= 0)
         totalFlex += Math.max(
           0,
-          calcularFlexItem({
+          -calcularFlexItem({
             qtProduto: it.qt,
             vlUnitario: it.vlUnitario,
             vlPrecoOriginal: it.vlUnitarioOriginal,
