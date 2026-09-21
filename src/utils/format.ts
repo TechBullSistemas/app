@@ -10,6 +10,21 @@ export function fmtMoney(v: number | null | undefined) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+export function fmtCpfCnpj(v: string | null | undefined) {
+  if (!v) return null;
+  const digits = v.replace(/\D/g, '');
+  if (digits.length === 11) {
+    return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  }
+  if (digits.length === 14) {
+    return digits.replace(
+      /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+      '$1.$2.$3/$4-$5',
+    );
+  }
+  return v;
+}
+
 export function fmtDate(v: string | null | undefined) {
   if (!v) return '—';
   try {

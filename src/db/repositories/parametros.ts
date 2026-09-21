@@ -39,6 +39,7 @@ export interface EmpresaParametros {
   idDataSincronizacaoVendaApp: boolean;
   idMostraIncrementoValorApp: boolean;
   vlIncrementoValorApp: number;
+  idMostraUltimaCompraApp: boolean;
   idVerificaTambemColunaLiberadoInternet: boolean;
   // Fórmula dinâmica
   dsFuncaoCalculoPrecoVenda: string | null;
@@ -81,6 +82,7 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   idDataSincronizacaoVendaApp: false,
   idMostraIncrementoValorApp: false,
   vlIncrementoValorApp: PASSO_VALOR_PADRAO,
+  idMostraUltimaCompraApp: true,
   idVerificaTambemColunaLiberadoInternet: false,
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
@@ -115,6 +117,14 @@ export async function getEmpresaParametros(
     cdEmpresa,
     holdingId,
     ...lerIncrementoValor(row.raw_json),
+    idMostraUltimaCompraApp: (() => {
+      try {
+        const raw = JSON.parse(row.raw_json || '{}');
+        return raw.idMostraUltimaCompraApp !== false;
+      } catch {
+        return DEFAULTS.idMostraUltimaCompraApp;
+      }
+    })(),
     cdEstado: s(row.cd_estado, null),
     cdTabelaPrecoPadrao:
       row.cd_tabela_preco_padrao != null

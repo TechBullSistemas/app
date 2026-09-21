@@ -13,7 +13,7 @@ import { getProdutoDescricoes } from '@/db/repositories/produtos';
 import { findCondicaoPagto } from '@/db/repositories/condicaoPagto';
 import { getClienteById } from '@/db/repositories/clientes';
 import { getDb } from '@/db/database';
-import { fmtDate, fmtMoney } from '@/utils/format';
+import { fmtCpfCnpj, fmtDate, fmtMoney } from '@/utils/format';
 
 interface ItemNota {
   cdProduto: number;
@@ -86,6 +86,7 @@ export default function VendaDetalhe() {
   const [naturezaLabel, setNaturezaLabel] = useState<string | null>(null);
   const [tipoVendaLabel, setTipoVendaLabel] = useState<string | null>(null);
   const [clienteNome, setClienteNome] = useState<string | null>(null);
+  const [clienteCpfCnpj, setClienteCpfCnpj] = useState<string | null>(null);
   const [serie, setSerie] = useState<string | null>(null);
   const [condicaoPagto, setCondicaoPagto] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,8 +122,10 @@ export default function VendaDetalhe() {
       if (n.cd_cliente != null) {
         const cli = await getClienteById(n.cd_cliente, holdingId);
         setClienteNome(cli?.nome ?? null);
+        setClienteCpfCnpj(fmtCpfCnpj(cli?.cpf_cnpj));
       } else {
         setClienteNome(null);
+        setClienteCpfCnpj(null);
       }
 
       if (rawMeta.cdCondicaoPagto != null) {
@@ -163,7 +166,14 @@ export default function VendaDetalhe() {
           NF nº {nota.cd_nota}
           {serie ? ` / Série ${serie}` : ''}
         </Text>
-        {clienteNome ? <Text style={styles.subtle}>Cliente: {clienteNome}</Text> : null}
+        {clienteNome ? (
+          <Text style={styles.subtle}>
+            Cliente: {clienteNome}
+            {clienteCpfCnpj
+              ? ` • ${clienteCpfCnpj.replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'}: ${clienteCpfCnpj}`
+              : ''}
+          </Text>
+        ) : null}
         <Text style={styles.subtle}>Emissão: {fmtDate(nota.dt_emissao)}</Text>
         <Text style={styles.totalValor}>{fmtMoney(nota.vl_total)}</Text>
       </View>

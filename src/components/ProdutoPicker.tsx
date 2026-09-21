@@ -32,6 +32,7 @@ interface Props {
   onSelect: (produto: ProdutoRow, vlUltimaCompra: number | null) => void;
   cdCliente?: number | null;
   holdingId?: number | null;
+  mostrarUltimaCompra?: boolean;
 }
 
 interface HistoricoCliente {
@@ -51,6 +52,7 @@ export function ProdutoPicker({
   onSelect,
   cdCliente,
   holdingId,
+  mostrarUltimaCompra = true,
 }: Props) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ProdutoRow[]>([]);
@@ -213,7 +215,7 @@ export function ProdutoPicker({
                     <Text style={styles.price}>
                       {fmtMoney(item.vl_venda ?? 0)}
                     </Text>
-                    {ultimaVenda != null ? (
+                    {mostrarUltimaCompra && ultimaVenda != null ? (
                       <Text style={styles.lastPrice}>
                         Última compra: {fmtMoney(ultimaVenda.vlUnitario)}
                       </Text>

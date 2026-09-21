@@ -218,6 +218,31 @@ test('incremento por holding persiste offline, desativa na próxima busca e API 
   } finally { sqlite.close(); }
 });
 
+test('exibição da última compra vem ativada por padrão e respeita a configuração da holding', async () => {
+  const { sqlite, db, fromSrc } = harness();
+  try {
+    await fromSrc('db/migrations.ts').runMigrations(db);
+    const { bulkInsertEmpresas } = fromSrc('db/repositories/empresas.ts');
+    const { getEmpresaParametros } = fromSrc('db/repositories/parametros.ts');
+    await bulkInsertEmpresas([{ cdEmpresa: 1 }], 28);
+    assert.equal((await getEmpresaParametros(1, 28)).idMostraUltimaCompraApp, true);
+    await bulkInsertEmpresas([{ cdEmpresa: 1, idMostraUltimaCompraApp: false }], 28);
+    assert.equal((await getEmpresaParametros(1, 28)).idMostraUltimaCompraApp, false);
+    sqlite.exec("UPDATE empresa SET raw_json='inválido' WHERE holding_id=28");
+    assert.equal((await getEmpresaParametros(1, 28)).idMostraUltimaCompraApp, true);
+  } finally { sqlite.close(); }
+});
+
+test('formata CPF e CNPJ para os detalhes da venda', () => {
+  const { sqlite, fromSrc } = harness();
+  try {
+    const { fmtCpfCnpj } = fromSrc('utils/format.ts');
+    assert.equal(fmtCpfCnpj('12345678901'), '123.456.789-01');
+    assert.equal(fmtCpfCnpj('12.345.678/0001-90'), '12.345.678/0001-90');
+    assert.equal(fmtCpfCnpj(null), null);
+  } finally { sqlite.close(); }
+});
+
 test('passo de cinco centavos preserva precisão e não produz preço negativo', () => {
   const { sqlite, fromSrc } = harness();
   try {

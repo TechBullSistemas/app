@@ -483,6 +483,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     empresaParams?.holdingId === user?.holdingId &&
     empresaParams?.cdEmpresa === user?.cdEmpresa &&
     empresaParams?.idMostraIncrementoValorApp === true;
+  const mostrarUltimaCompra =
+    empresaParams?.idMostraUltimaCompraApp !== false;
   const passoValor = empresaParams?.vlIncrementoValorApp ?? 0.05;
   const precoReadonly = modoAlteracaoPreco === 'N';
   const precoSomenteAumenta = modoAlteracaoPreco === 'A';
@@ -1750,7 +1752,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                       {it.permiteSaldoNegativo ? ' (permite negativo)' : ''}
                     </Text>
                   )}
-                  {it.vlUltimaCompra != null ? (
+                  {mostrarUltimaCompra && it.vlUltimaCompra != null ? (
                     <Text style={styles.lastPurchase}>
                       Última compra: {fmtMoney(it.vlUltimaCompra)}
                     </Text>
@@ -2217,6 +2219,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         onSelect={adicionarProduto}
         cdCliente={cliente?.cd_cliente}
         holdingId={user!.holdingId}
+        mostrarUltimaCompra={mostrarUltimaCompra}
       />
       <CondicaoPagtoPicker
         visible={condPickerOpen}
