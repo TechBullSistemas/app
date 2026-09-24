@@ -21,6 +21,7 @@ import {
   listProdutosCompradosCliente,
   listTitulosByCliente,
   NotaFiscalRow,
+  labelTituloReceber,
   parseTituloRaw,
   ProdutoCompradoCliente,
   sortTitulosByVencimento,
@@ -397,7 +398,7 @@ export default function ClienteDetalhe() {
                         )}
                         <Text style={styles.linhaItemSub}>
                           {' '}
-                          • {aberto ? 'Em aberto' : 'Quitado'}
+                          • {labelTituloReceber(t)}
                         </Text>
                       </View>
                       <Text style={styles.linhaItemSub}>

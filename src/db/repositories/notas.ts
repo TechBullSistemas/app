@@ -1,5 +1,8 @@
 import { getDb } from '../database';
+import { SQL_TITULO_EM_ABERTO, tituloEmAberto } from '../tituloAberto';
 import { getProdutoDescricoes } from './produtos';
+
+export { labelTituloReceber, tituloEmAberto } from '../tituloAberto';
 
 export interface NotaFiscalRow {
   cd_nota: number;
@@ -137,10 +140,6 @@ export function parseTituloRaw(row: TituloRow): TituloParsed {
   }
 }
 
-export function tituloEmAberto(row: TituloRow): boolean {
-  return !row.vl_pago || row.vl_pago < (row.vl_titulo ?? 0);
-}
-
 export function diasVencidos(dtVencimento: string | null | undefined): number | null {
   if (!dtVencimento) return null;
   const hoje = new Date();
@@ -187,7 +186,7 @@ export async function getMapTitulosAtrasoResumo(): Promise<
      FROM titulo_receber
      WHERE dt_vencimento IS NOT NULL
        AND date(dt_vencimento) < date('now', 'localtime')
-       AND (vl_pago IS NULL OR vl_pago < COALESCE(vl_titulo, 0))
+       AND ${SQL_TITULO_EM_ABERTO}
      GROUP BY cd_cliente, holding_id`,
   );
   const map = new Map<string, TituloAtrasoResumo>();
