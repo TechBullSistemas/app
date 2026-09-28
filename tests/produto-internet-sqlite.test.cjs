@@ -545,7 +545,7 @@ test('configurações do pedido ficam isoladas por holding e catálogo usa a tab
         outro.idUsaTipoPedidoApp,
         outro.idSalvaRascunhoPedidoApp,
       ],
-      [false, false, true, false, false],
+      [false, false, true, false, true],
     );
 
     await bulkInsertProdutos(

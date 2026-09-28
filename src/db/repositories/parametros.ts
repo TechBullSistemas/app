@@ -92,7 +92,7 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   idOcultaSaldoFlexApp: false,
   idMostraOrdemCompraApp: true,
   idUsaTipoPedidoApp: false,
-  idSalvaRascunhoPedidoApp: false,
+  idSalvaRascunhoPedidoApp: true,
   idVerificaTambemColunaLiberadoInternet: false,
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
@@ -138,7 +138,7 @@ export async function getEmpresaParametros(
     idOcultaSaldoFlexApp: rawConfig.idOcultaSaldoFlexApp === true,
     idMostraOrdemCompraApp: rawConfig.idMostraOrdemCompraApp !== false,
     idUsaTipoPedidoApp: rawConfig.idUsaTipoPedidoApp === true,
-    idSalvaRascunhoPedidoApp: rawConfig.idSalvaRascunhoPedidoApp === true,
+    idSalvaRascunhoPedidoApp: rawConfig.idSalvaRascunhoPedidoApp !== false,
     cdEstado: s(row.cd_estado, null),
     cdTabelaPrecoPadrao:
       row.cd_tabela_preco_padrao != null
