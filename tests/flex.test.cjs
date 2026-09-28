@@ -126,10 +126,18 @@ test('acréscimo positivo não libera descontos; pedido antigo mantém reserva a
   await outbox.enqueueVenda(antigo);
   await outbox.enqueueVenda(order('acrescimo', [item(100, 140, 3)]));
   assert.equal((await flex.getFlexLocal(h.user)).disponivel, 60);
-  await assert.rejects(outbox.enqueueVenda(order('excesso', [item(100, 39)])), /insuficiente/);
-  assert.deepEqual(h.src('services/pricing/flex').calcularFlexPedido([item(100, 140, 3)]), {
-    valores: [120], total: 120, consumo: 0,
-  });
+  await assert.rejects(
+    outbox.enqueueVenda(order('excesso', [item(100, 39)])),
+    /insuficiente/,
+  );
+  assert.deepEqual(
+    h.src('services/pricing/flex').calcularFlexPedido([item(100, 140, 3)]),
+    {
+      valores: [120],
+      total: 120,
+      consumo: 0,
+    },
+  );
   h.sqlite.close();
 });
 
@@ -193,6 +201,26 @@ test('editar substitui reserva, excluir libera, saves concorrentes e isolamento 
   const other = { ...h.user, userId: 13 };
   await flex.storeFlexSnapshot(other, snapshot(1, 80, 0));
   assert.equal((await flex.getFlexLocal(other)).disponivel, 80);
+  h.sqlite.close();
+});
+
+test('rascunho fica fora do upload, reserva o Flex e só o salvar promove para pendente', async () => {
+  const h = harness();
+  await h.src('db/migrations').runMigrations(h.db);
+  const flex = h.src('db/repositories/flex');
+  const outbox = h.src('db/repositories/outbox');
+  await flex.storeFlexSnapshot(h.user, snapshot(1, 100, 0));
+  const draft = order('draft-A', [item(100, 60)]);
+  await outbox.upsertVendaDraft(draft);
+  assert.equal((await outbox.getOutboxVenda('draft-A')).status, 'draft');
+  assert.equal((await outbox.listPendingVendas()).length, 0);
+  assert.equal((await flex.getFlexLocal(h.user)).disponivel, 60);
+  await outbox.enqueueVenda(draft);
+  assert.equal((await outbox.getOutboxVenda('draft-A')).status, 'pending');
+  await outbox.upsertVendaDraft(order('draft-A', [item(100, 10)]));
+  const salvo = await outbox.getOutboxVenda('draft-A');
+  assert.equal(salvo.status, 'pending');
+  assert.equal(JSON.parse(salvo.payload).prevendaItem[0].vlUnitario, 60);
   h.sqlite.close();
 });
 

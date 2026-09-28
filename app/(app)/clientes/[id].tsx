@@ -12,7 +12,11 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { ClienteRow, getClienteById, isClienteEditavel } from '@/db/repositories/clientes';
+import {
+  ClienteRow,
+  getClienteById,
+  isClienteEditavel,
+} from '@/db/repositories/clientes';
 import { ClienteAtrasoInfo } from '@/components/ClienteAtrasoInfo';
 import {
   calcTituloAtrasoResumo,
@@ -83,7 +87,9 @@ export default function ClienteDetalhe() {
   const [visitas, setVisitas] = useState<VisitaRow[]>([]);
   const [produtos, setProdutos] = useState<ProdutoCompradoCliente[]>([]);
   const [pendentes, setPendentes] = useState<OutboxVendaRow[]>([]);
-  const [produtoFotos, setProdutoFotos] = useState<Record<number, string | null>>({});
+  const [produtoFotos, setProdutoFotos] = useState<
+    Record<number, string | null>
+  >({});
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -132,14 +138,19 @@ export default function ClienteDetalhe() {
   const titulosExibidos = sortTitulosByVencimento(
     filtroTitulos === 'abertos' ? titulos.filter(tituloEmAberto) : titulos,
   );
-  const enderecoLine = [cli.endereco, cli.numero, cli.bairro].filter(Boolean).join(', ');
+  const enderecoLine = [cli.endereco, cli.numero, cli.bairro]
+    .filter(Boolean)
+    .join(', ');
   const cidadeLine = cli.cidade_nome
     ? `${cli.cidade_nome}${cli.estado ? `/${cli.estado}` : ''}`
     : null;
 
   function tirarPedido() {
     if (cli?.id_ativo !== 1) {
-      Alert.alert('Cliente inativo', 'Não é permitido realizar novas vendas para este cliente.');
+      Alert.alert(
+        'Cliente inativo',
+        'Não é permitido realizar novas vendas para este cliente.',
+      );
       return;
     }
     router.push({
@@ -160,8 +171,12 @@ export default function ClienteDetalhe() {
             </View>
           ) : null}
         </View>
-        {cli.razao_social ? <Text style={styles.subtle}>{cli.razao_social}</Text> : null}
-        <Text style={styles.subtle}>Situação: {cli.id_ativo === 1 ? 'Ativo' : 'Inativo'}</Text>
+        {cli.razao_social ? (
+          <Text style={styles.subtle}>{cli.razao_social}</Text>
+        ) : null}
+        <Text style={styles.subtle}>
+          Situação: {cli.id_ativo === 1 ? 'Ativo' : 'Inativo'}
+        </Text>
         <Text style={styles.subtle}>{fmtCpfCnpj(cli.cpf_cnpj) || '—'}</Text>
         <View style={styles.headerActions}>
           <Pressable style={styles.tirarBtn} onPress={tirarPedido}>
@@ -213,7 +228,10 @@ export default function ClienteDetalhe() {
         })}
       </ScrollView>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, gap: 12 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 12, gap: 12 }}
+      >
         {aba === 'dados' && (
           <>
             <Section title="Contato">
@@ -231,13 +249,18 @@ export default function ClienteDetalhe() {
                 <Text style={styles.subtle}>Sem visitas.</Text>
               ) : (
                 visitas.slice(0, 10).map((v, i) => (
-                  <View key={`${v.cd_visita ?? 'l'}-${i}`} style={styles.linhaItem}>
+                  <View
+                    key={`${v.cd_visita ?? 'l'}-${i}`}
+                    style={styles.linhaItem}
+                  >
                     <Text style={styles.linhaItemMain}>
                       {fmtDate(v.dt_visita)}{' '}
                       {v.id_comprou ? '• Comprou' : '• Não comprou'}
                     </Text>
                     {v.motivo_nao_comprou ? (
-                      <Text style={styles.linhaItemSub}>Motivo: {v.motivo_nao_comprou}</Text>
+                      <Text style={styles.linhaItemSub}>
+                        Motivo: {v.motivo_nao_comprou}
+                      </Text>
                     ) : null}
                   </View>
                 ))
@@ -268,7 +291,9 @@ export default function ClienteDetalhe() {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.linhaItemMain}>NF {n.cd_nota}</Text>
-                    <Text style={styles.linhaItemSub}>{fmtDate(n.dt_emissao)}</Text>
+                    <Text style={styles.linhaItemSub}>
+                      {fmtDate(n.dt_emissao)}
+                    </Text>
                   </View>
                   <Text style={styles.cardTotal}>{fmtMoney(n.vl_total)}</Text>
                   <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
@@ -281,7 +306,9 @@ export default function ClienteDetalhe() {
         {aba === 'produtos' && (
           <Section title={`Produtos comprados (${produtos.length})`}>
             {produtos.length === 0 ? (
-              <Text style={styles.subtle}>Nenhum produto encontrado nas vendas.</Text>
+              <Text style={styles.subtle}>
+                Nenhum produto encontrado nas vendas.
+              </Text>
             ) : (
               produtos.map((p) => {
                 const foto = produtoFotos[p.cd_produto];
@@ -310,12 +337,17 @@ export default function ClienteDetalhe() {
                         {p.descricao ?? `Produto ${p.cd_produto}`}
                       </Text>
                       <Text style={styles.linhaItemSub}>
-                        #{p.cd_produto} • Qtd. {fmtQty(p.qt_total)} • {p.vendas_count} venda
+                        #{p.cd_produto} • Qtd. {fmtQty(p.qt_total)} •{' '}
+                        {p.vendas_count} venda
                         {p.vendas_count !== 1 ? 's' : ''}
                       </Text>
                     </View>
                     <Text style={styles.cardTotal}>{fmtMoney(p.vl_total)}</Text>
-                    <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#94a3b8"
+                    />
                   </Pressable>
                 );
               })
@@ -327,7 +359,10 @@ export default function ClienteDetalhe() {
           <Section title={`Títulos (${titulosExibidos.length})`}>
             <View style={styles.filtroRow}>
               <Pressable
-                style={[styles.filtroChip, filtroTitulos === 'abertos' && styles.filtroChipAtivo]}
+                style={[
+                  styles.filtroChip,
+                  filtroTitulos === 'abertos' && styles.filtroChipAtivo,
+                ]}
                 onPress={() => setFiltroTitulos('abertos')}
               >
                 <Text
@@ -340,7 +375,10 @@ export default function ClienteDetalhe() {
                 </Text>
               </Pressable>
               <Pressable
-                style={[styles.filtroChip, filtroTitulos === 'todos' && styles.filtroChipAtivo]}
+                style={[
+                  styles.filtroChip,
+                  filtroTitulos === 'todos' && styles.filtroChipAtivo,
+                ]}
                 onPress={() => setFiltroTitulos('todos')}
               >
                 <Text
@@ -359,9 +397,13 @@ export default function ClienteDetalhe() {
               titulosExibidos.map((t) => {
                 const parsed = parseTituloRaw(t);
                 const aberto = tituloEmAberto(t);
-                const diasAtraso = aberto ? diasVencidos(t.dt_vencimento) : null;
+                const diasAtraso = aberto
+                  ? diasVencidos(t.dt_vencimento)
+                  : null;
                 const saldo = (t.vl_titulo ?? 0) - (t.vl_pago ?? 0);
-                const serieLabel = parsed.serie ? `Série ${parsed.serie}` : null;
+                const serieLabel = parsed.serie
+                  ? `Série ${parsed.serie}`
+                  : null;
 
                 return (
                   <View
@@ -394,7 +436,9 @@ export default function ClienteDetalhe() {
                             <Text style={styles.tituloLink}>{t.cd_titulo}</Text>
                           </Pressable>
                         ) : (
-                          <Text style={styles.linhaItemMain}>{t.cd_titulo}</Text>
+                          <Text style={styles.linhaItemMain}>
+                            {t.cd_titulo}
+                          </Text>
                         )}
                         <Text style={styles.linhaItemSub}>
                           {' '}
@@ -402,7 +446,11 @@ export default function ClienteDetalhe() {
                         </Text>
                       </View>
                       <Text style={styles.linhaItemSub}>
-                        {[serieLabel, `Venc. ${fmtDate(t.dt_vencimento)}`, `Emissão ${fmtDate(t.dt_emissao)}`]
+                        {[
+                          serieLabel,
+                          `Venc. ${fmtDate(t.dt_vencimento)}`,
+                          `Emissão ${fmtDate(t.dt_emissao)}`,
+                        ]
                           .filter(Boolean)
                           .join(' • ')}
                       </Text>
@@ -412,9 +460,15 @@ export default function ClienteDetalhe() {
                         </Text>
                       ) : null}
                     </View>
-                    <Text style={styles.cardTotal}>{fmtMoney(t.vl_titulo)}</Text>
+                    <Text style={styles.cardTotal}>
+                      {fmtMoney(t.vl_titulo)}
+                    </Text>
                     {parsed.cdNota != null ? (
-                      <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color="#94a3b8"
+                      />
                     ) : null}
                   </View>
                 );
@@ -426,7 +480,9 @@ export default function ClienteDetalhe() {
         {aba === 'pendentes' && (
           <Section title={`Pedidos pendentes (${pendentes.length})`}>
             {pendentes.length === 0 ? (
-              <Text style={styles.subtle}>Nenhum pedido pendente para este cliente.</Text>
+              <Text style={styles.subtle}>
+                Nenhum pedido pendente para este cliente.
+              </Text>
             ) : (
               pendentes.map((p) => (
                 <Pressable
@@ -444,7 +500,12 @@ export default function ClienteDetalhe() {
                       {fmtDate(p.created_at)}
                     </Text>
                     <Text style={styles.linhaItemSub}>
-                      Status: {p.status === 'pending' ? 'Aguardando envio' : p.status}
+                      Status:{' '}
+                      {p.status === 'draft'
+                        ? 'Rascunho'
+                        : p.status === 'pending'
+                          ? 'Aguardando envio'
+                          : p.status}
                       {p.attempts > 0 ? ` • ${p.attempts} tentativa(s)` : ''}
                     </Text>
                     {p.last_error ? (
@@ -465,7 +526,13 @@ export default function ClienteDetalhe() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -497,7 +564,13 @@ const styles = StyleSheet.create({
   titulo: { fontSize: 18, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
   subtle: { color: '#64748b', fontSize: 12 },
   headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' },
+  headerActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    alignItems: 'center',
+  },
   chipPendente: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -552,10 +625,24 @@ const styles = StyleSheet.create({
   tabText: { color: '#475569', fontSize: 12, fontWeight: '600' },
   tabTextAtiva: { color: '#fff' },
   card: { backgroundColor: '#fff', padding: 14, borderRadius: 12, gap: 6 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
-  linha: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  linha: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
   linhaLabel: { color: '#64748b' },
-  linhaValue: { color: '#0f172a', fontWeight: '600', flexShrink: 1, textAlign: 'right' },
+  linhaValue: {
+    color: '#0f172a',
+    fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
+  },
   linhaItem: { paddingVertical: 6, borderTopWidth: 1, borderColor: '#f1f5f9' },
   linhaItemMain: { color: '#0f172a', fontWeight: '600' },
   linhaItemSub: { color: '#64748b', fontSize: 12, marginTop: 2 },
@@ -590,6 +677,10 @@ const styles = StyleSheet.create({
   },
   atrasoBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   atrasoBadgePlaceholder: { width: 28 },
-  tituloNumRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  tituloNumRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
   tituloLink: { color: '#1e3a8a', fontWeight: '700', fontSize: 14 },
 });

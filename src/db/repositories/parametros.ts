@@ -44,6 +44,7 @@ export interface EmpresaParametros {
   idOcultaSaldoFlexApp: boolean;
   idMostraOrdemCompraApp: boolean;
   idUsaTipoPedidoApp: boolean;
+  idSalvaRascunhoPedidoApp: boolean;
   idVerificaTambemColunaLiberadoInternet: boolean;
   // Fórmula dinâmica
   dsFuncaoCalculoPrecoVenda: string | null;
@@ -91,6 +92,7 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   idOcultaSaldoFlexApp: false,
   idMostraOrdemCompraApp: true,
   idUsaTipoPedidoApp: false,
+  idSalvaRascunhoPedidoApp: false,
   idVerificaTambemColunaLiberadoInternet: false,
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
@@ -136,6 +138,7 @@ export async function getEmpresaParametros(
     idOcultaSaldoFlexApp: rawConfig.idOcultaSaldoFlexApp === true,
     idMostraOrdemCompraApp: rawConfig.idMostraOrdemCompraApp !== false,
     idUsaTipoPedidoApp: rawConfig.idUsaTipoPedidoApp === true,
+    idSalvaRascunhoPedidoApp: rawConfig.idSalvaRascunhoPedidoApp === true,
     cdEstado: s(row.cd_estado, null),
     cdTabelaPrecoPadrao:
       row.cd_tabela_preco_padrao != null

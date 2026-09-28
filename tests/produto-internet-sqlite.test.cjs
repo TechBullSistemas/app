@@ -519,6 +519,7 @@ test('configurações do pedido ficam isoladas por holding e catálogo usa a tab
           idOcultaSaldoFlexApp: true,
           idMostraOrdemCompraApp: false,
           idUsaTipoPedidoApp: true,
+          idSalvaRascunhoPedidoApp: true,
         },
       ],
       28,
@@ -532,8 +533,9 @@ test('configurações do pedido ficam isoladas por holding e catálogo usa a tab
         armarinhos.idOcultaSaldoFlexApp,
         armarinhos.idMostraOrdemCompraApp,
         armarinhos.idUsaTipoPedidoApp,
+        armarinhos.idSalvaRascunhoPedidoApp,
       ],
-      [true, true, false, true],
+      [true, true, false, true, true],
     );
     assert.deepEqual(
       [
@@ -541,8 +543,9 @@ test('configurações do pedido ficam isoladas por holding e catálogo usa a tab
         outro.idOcultaSaldoFlexApp,
         outro.idMostraOrdemCompraApp,
         outro.idUsaTipoPedidoApp,
+        outro.idSalvaRascunhoPedidoApp,
       ],
-      [false, false, true, false],
+      [false, false, true, false, false],
     );
 
     await bulkInsertProdutos(

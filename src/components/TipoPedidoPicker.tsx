@@ -19,7 +19,6 @@ export const TIPOS_PEDIDO = [
   { id: 4, descricao: 'Recolhe Devolução' },
   { id: 5, descricao: 'Bonificação' },
   { id: 6, descricao: 'Amostra' },
-  { id: 7, descricao: 'Degustação' },
 ] as const;
 
 export type TipoPedido = (typeof TIPOS_PEDIDO)[number];

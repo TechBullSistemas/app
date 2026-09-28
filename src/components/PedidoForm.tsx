@@ -54,6 +54,7 @@ import { useOnlineStore } from '@/stores/online';
 import {
   enqueueVenda,
   getOutboxVenda,
+  upsertVendaDraft,
   updateOutboxVendaPayload,
 } from '@/db/repositories/outbox';
 import {
@@ -278,6 +279,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(isEdit);
   const [calculandoCondicoes, setCalculandoCondicoes] = useState(false);
+  const [rascunhoStatus, setRascunhoStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
+  const draftClientIdRef = useRef<string | null>(clientId ?? null);
+  if (!draftClientIdRef.current) draftClientIdRef.current = uuidv4();
   const cdClienteSelecionado = cliente?.cd_cliente ?? null;
   const holdingIdSelecionado = user?.holdingId ?? null;
 
@@ -975,6 +981,118 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     setParcelas((prev) => recalcularParcelasNoTotal(prev, totalComAjuste));
   }, [parcelasManuais, totalComAjuste]);
 
+  const salvarRascunhoAutomaticamente =
+    empresaParams?.idSalvaRascunhoPedidoApp === true && !isEdit;
+
+  useEffect(() => {
+    if (
+      !salvarRascunhoAutomaticamente ||
+      !user ||
+      !cliente ||
+      carregando ||
+      calculandoCondicoes ||
+      salvando
+    )
+      return;
+
+    setRascunhoStatus('saving');
+    const timer = setTimeout(async () => {
+      const itensDraft = itens.map((item) => ({
+        cdProduto: item.cdProduto,
+        descricao: item.descricao,
+        qt: item.qt,
+        vlUnitario: item.vlUnitario,
+        vlUnitarioOriginal: item.vlUnitarioOriginal,
+        vlTotal: round2(item.qt * item.vlUnitario),
+        cdCondicaoPreco: item.cdCondicaoPreco ?? null,
+        condicaoPrecoLabel: item.condicaoPrecoLabel ?? null,
+        vlMinimo: item.vlMinimo ?? null,
+      }));
+      const prevendaItem = itens.map((item) => ({
+        cdProduto: item.cdProduto,
+        qtProduto: item.qt,
+        vlUnitario: item.vlUnitario,
+        vlPrecoOriginal: item.vlUnitarioOriginal,
+        cdCondicaoPreco: item.cdCondicaoPreco ?? null,
+        vlFlex: usaFlex
+          ? calcularFlexItem({
+              qtProduto: item.qt,
+              vlUnitario: item.vlUnitario,
+              vlPrecoOriginal: item.vlUnitarioOriginal,
+            })
+          : 0,
+      }));
+      const payload = {
+        cdEmpresa: user.cdEmpresa,
+        cdCliente: cliente.cd_cliente,
+        cdCondicaoPagto: condicaoSel?.cd_condicao ?? null,
+        cdFormaPagamento: formaPagamentoSel?.cd_forma ?? null,
+        cdTabelaPreco: cdTabelaPrecoResolvida,
+        cdFuncionario: user.userId,
+        cdRepresentante: user.cdRepresentante ?? null,
+        dtEmissao: new Date().toISOString(),
+        obs: obs.trim() || undefined,
+        dsOrdemCompra: dsOrdemCompra.trim()
+          ? dsOrdemCompra.trim().slice(0, 65)
+          : undefined,
+        idTipoPedido: usarTipoPedido ? tipoPedido.id : undefined,
+        prevendaItem,
+        vlTotal: totalComAjuste,
+        vlFlexTotal: usaFlex ? calcularFlexPedido(prevendaItem).total : 0,
+        flexVersion: 1,
+        __display: {
+          representante: `${user.userId} - ${user.nome}`,
+          condicaoLabel: condicaoSel?.descricao ?? null,
+          formaPagamentoLabel: formaPagamentoSel?.descricao ?? null,
+          observacao: obs.trim() || null,
+          dsOrdemCompra: dsOrdemCompra.trim()
+            ? dsOrdemCompra.trim().slice(0, 65)
+            : null,
+          idTipoPedido: usarTipoPedido ? tipoPedido.id : null,
+          itens: itensDraft,
+          parcelas: parcelas.map((parcela) => ({
+            numero: parcela.numero,
+            vencimento: parcela.vencimento,
+            valor: parcela.valor,
+          })),
+        },
+      };
+      try {
+        await upsertVendaDraft({
+          clientId: draftClientIdRef.current!,
+          cdCliente: cliente.cd_cliente,
+          cdEmpresa: user.cdEmpresa,
+          holdingId: user.holdingId,
+          payload,
+          vlTotal: totalComAjuste,
+        });
+        setRascunhoStatus('saved');
+      } catch (error) {
+        console.warn('PedidoForm: falha ao salvar rascunho', error);
+        setRascunhoStatus('error');
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [
+    salvarRascunhoAutomaticamente,
+    user,
+    cliente,
+    carregando,
+    calculandoCondicoes,
+    salvando,
+    itens,
+    parcelas,
+    condicaoSel,
+    formaPagamentoSel,
+    cdTabelaPrecoResolvida,
+    obs,
+    dsOrdemCompra,
+    usarTipoPedido,
+    tipoPedido,
+    totalComAjuste,
+    usaFlex,
+  ]);
+
   function adicionarProduto(p: ProdutoRow, vlUltimaCompra: number | null) {
     if (!(Number(p.vl_venda) > 0)) {
       Alert.alert(
@@ -1518,7 +1636,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
     setSalvando(true);
     try {
-      const cId = clientId || uuidv4();
+      const cId = clientId || draftClientIdRef.current!;
       const dtEmissao = new Date().toISOString();
       const parcelasSalvar = garantirSomaParcelas(parcelas, totalComAjuste);
 
@@ -2298,6 +2416,22 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         </View>
       )}
 
+      {salvarRascunhoAutomaticamente && cliente && (
+        <Text
+          style={
+            rascunhoStatus === 'error' ? styles.draftError : styles.draftStatus
+          }
+        >
+          {rascunhoStatus === 'saving'
+            ? 'Salvando rascunho...'
+            : rascunhoStatus === 'saved'
+              ? 'Rascunho salvo automaticamente'
+              : rascunhoStatus === 'error'
+                ? 'Não foi possível salvar o rascunho'
+                : 'O rascunho será salvo automaticamente'}
+        </Text>
+      )}
+
       <Pressable
         style={[
           styles.button,
@@ -2683,4 +2817,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  draftStatus: { color: '#64748b', textAlign: 'center', marginTop: 10 },
+  draftError: { color: '#dc2626', textAlign: 'center', marginTop: 10 },
 });

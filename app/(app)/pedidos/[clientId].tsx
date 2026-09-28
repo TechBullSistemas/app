@@ -140,7 +140,10 @@ export default function PedidoDetalhe() {
     }, [carregar]),
   );
 
-  const podeEditar = row?.status === 'pending' || row?.status === 'error';
+  const podeEditar =
+    row?.status === 'draft' ||
+    row?.status === 'pending' ||
+    row?.status === 'error';
 
   function handleEditar() {
     if (!podeEditar || !row) return;

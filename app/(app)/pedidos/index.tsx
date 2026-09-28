@@ -39,6 +39,7 @@ function fmtDate(s: string | null | undefined) {
 }
 
 const OUTBOX_STATUS_COLOR: Record<string, string> = {
+  draft: '#a16207',
   pending: '#64748b',
   sending: '#0ea5e9',
   sent: '#16a34a',
@@ -46,6 +47,7 @@ const OUTBOX_STATUS_COLOR: Record<string, string> = {
 };
 
 const OUTBOX_STATUS_LABEL: Record<string, string> = {
+  draft: 'Rascunho',
   pending: 'A enviar',
   sending: 'Enviando',
   sent: 'Enviado',
@@ -97,7 +99,10 @@ export default function PedidosScreen() {
 
   return (
     <View style={styles.container}>
-      <Pressable style={styles.fab} onPress={() => router.push('/(app)/pedidos/novo')}>
+      <Pressable
+        style={styles.fab}
+        onPress={() => router.push('/(app)/pedidos/novo')}
+      >
         <Ionicons name="add" size={28} color="#fff" />
       </Pressable>
       {loading ? (
@@ -119,8 +124,8 @@ export default function PedidosScreen() {
           ListHeaderComponent={
             items.length > 0 && isIntegradorDuapi ? (
               <Text style={styles.hint}>
-                “A enviar” = app → Techbull. “Pendente/Sincronizado” = Techbull →
-                Duapi.
+                “A enviar” = app → Techbull. “Pendente/Sincronizado” = Techbull
+                → Duapi.
               </Text>
             ) : null
           }
@@ -253,5 +258,10 @@ const styles = StyleSheet.create({
     elevation: 4,
     zIndex: 10,
   },
-  empty: { textAlign: 'center', marginTop: 32, color: '#64748b', paddingHorizontal: 24 },
+  empty: {
+    textAlign: 'center',
+    marginTop: 32,
+    color: '#64748b',
+    paddingHorizontal: 24,
+  },
 });

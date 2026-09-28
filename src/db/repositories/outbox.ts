@@ -3,7 +3,7 @@ import { assertFlexSave, withFlexWrite, readFlexSnapshot } from './flex';
 import { useSessionStore } from '../../stores/session';
 import { validarElegibilidadeVenda } from '../vendaElegibilidade';
 
-export type OutboxStatus = 'pending' | 'sending' | 'sent' | 'error';
+export type OutboxStatus = 'draft' | 'pending' | 'sending' | 'sent' | 'error';
 
 export interface OutboxVendaRow {
   client_id: string;
@@ -70,6 +70,44 @@ export async function enqueueVenda(item: {
       `INSERT OR REPLACE INTO outbox_venda
      (client_id, cd_cliente, cd_empresa, holding_id, payload, vl_total, status, attempts, last_error, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?)`,
+      [
+        item.clientId,
+        item.cdCliente,
+        item.cdEmpresa,
+        item.holdingId,
+        JSON.stringify(item.payload),
+        item.vlTotal,
+        now,
+      ],
+    );
+  });
+}
+
+export async function upsertVendaDraft(item: {
+  clientId: string;
+  cdCliente: number;
+  cdEmpresa: number;
+  holdingId: number;
+  payload: any;
+  vlTotal: number | null;
+}) {
+  return withFlexWrite(async (db) => {
+    const user = useSessionStore.getState().user;
+    if (!user || user.holdingId !== item.holdingId)
+      throw new Error('Sessão inválida para salvar este rascunho.');
+    const now = new Date().toISOString();
+    await db.runAsync(
+      `INSERT INTO outbox_venda
+       (client_id, cd_cliente, cd_empresa, holding_id, payload, vl_total, status, attempts, last_error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', 0, NULL, ?)
+       ON CONFLICT(client_id) DO UPDATE SET
+         cd_cliente = excluded.cd_cliente,
+         cd_empresa = excluded.cd_empresa,
+         holding_id = excluded.holding_id,
+         payload = excluded.payload,
+         vl_total = excluded.vl_total,
+         last_error = NULL
+       WHERE outbox_venda.status = 'draft'`,
       [
         item.clientId,
         item.cdCliente,
