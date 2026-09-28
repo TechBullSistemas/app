@@ -56,7 +56,9 @@ import {
   getOutboxVenda,
   upsertVendaDraft,
   updateOutboxVendaPayload,
+  type OutboxStatus,
 } from '@/db/repositories/outbox';
+import { deveSalvarRascunhoAutomaticamente } from '@/utils/rascunhoPedido';
 import {
   gerarPdfPedido,
   getEmpresaPedidoPdfData,
@@ -282,6 +284,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [rascunhoStatus, setRascunhoStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle');
+  const [pedidoStatus, setPedidoStatus] = useState<OutboxStatus | null>(null);
   const draftClientIdRef = useRef<string | null>(clientId ?? null);
   if (!draftClientIdRef.current) draftClientIdRef.current = uuidv4();
   const cdClienteSelecionado = cliente?.cd_cliente ?? null;
@@ -562,6 +565,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           router.back();
           return;
         }
+        setPedidoStatus(row.status);
 
         const cli = await getClienteById(row.cd_cliente, row.holding_id);
         if (cli) setCliente(cli);
@@ -981,8 +985,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     setParcelas((prev) => recalcularParcelasNoTotal(prev, totalComAjuste));
   }, [parcelasManuais, totalComAjuste]);
 
-  const salvarRascunhoAutomaticamente =
-    empresaParams?.idSalvaRascunhoPedidoApp === true && !isEdit;
+  const salvarRascunhoAutomaticamente = deveSalvarRascunhoAutomaticamente({
+    habilitado: empresaParams?.idSalvaRascunhoPedidoApp === true,
+    emEdicao: isEdit,
+    status: pedidoStatus,
+  });
 
   useEffect(() => {
     if (
