@@ -12,7 +12,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback } from 'react';
 import { listClientes, ClienteRow } from '@/db/repositories/clientes';
-import { getMapTitulosAtrasoResumo, TituloAtrasoResumo } from '@/db/repositories/notas';
+import {
+  getMapTitulosAtrasoResumo,
+  TituloAtrasoResumo,
+} from '@/db/repositories/notas';
 import { ClienteAtrasoInfo } from '@/components/ClienteAtrasoInfo';
 
 function tpPessoaLabel(tp: string | null | undefined) {
@@ -40,7 +43,9 @@ export default function ClientesScreen() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ClienteRow[]>([]);
-  const [atrasoMap, setAtrasoMap] = useState<Map<string, TituloAtrasoResumo>>(new Map());
+  const [atrasoMap, setAtrasoMap] = useState<Map<string, TituloAtrasoResumo>>(
+    new Map(),
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export default function ClientesScreen() {
     setLoading(true);
     const t = setTimeout(async () => {
       const [rows, atraso] = await Promise.all([
-        listClientes(search, 200),
+        listClientes(search, 200, true),
         getMapTitulosAtrasoResumo(),
       ]);
       if (alive) {
@@ -67,14 +72,15 @@ export default function ClientesScreen() {
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      Promise.all([listClientes(search, 200), getMapTitulosAtrasoResumo()]).then(
-        ([rows, atraso]) => {
-          if (alive) {
-            setItems(rows);
-            setAtrasoMap(atraso);
-          }
-        },
-      );
+      Promise.all([
+        listClientes(search, 200, true),
+        getMapTitulosAtrasoResumo(),
+      ]).then(([rows, atraso]) => {
+        if (alive) {
+          setItems(rows);
+          setAtrasoMap(atraso);
+        }
+      });
       return () => {
         alive = false;
       };
@@ -99,26 +105,28 @@ export default function ClientesScreen() {
           data={items}
           keyExtractor={(it) => `${it.cd_cliente}-${it.holding_id}`}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
-          ListEmptyComponent={<Text style={styles.empty}>Nenhum cliente encontrado.</Text>}
+          ListEmptyComponent={
+            <Text style={styles.empty}>Nenhum cliente encontrado.</Text>
+          }
           renderItem={({ item }) => {
-            const enderecoLine = [
-              item.endereco,
-              item.numero,
-              item.bairro,
-            ]
+            const enderecoLine = [item.endereco, item.numero, item.bairro]
               .filter(Boolean)
               .join(', ');
             const cidadeLine = item.cidade_nome
               ? `${item.cidade_nome}${item.estado ? `/${item.estado}` : ''}`
               : null;
-            const pendente = item.origem === 'local' && (item.pending_sync ?? 0) === 1;
+            const pendente =
+              item.origem === 'local' && (item.pending_sync ?? 0) === 1;
             return (
               <Pressable
                 style={styles.row}
                 onPress={() =>
                   router.push({
                     pathname: '/(app)/clientes/[id]',
-                    params: { id: String(item.cd_cliente), h: String(item.holding_id) },
+                    params: {
+                      id: String(item.cd_cliente),
+                      h: String(item.holding_id),
+                    },
                   })
                 }
               >
@@ -126,8 +134,14 @@ export default function ClientesScreen() {
                   <Text style={styles.name}>{item.nome ?? '(sem nome)'}</Text>
                   {pendente ? (
                     <View style={styles.chipPendente}>
-                      <Ionicons name="cloud-upload-outline" size={11} color="#92400e" />
-                      <Text style={styles.chipPendenteText}>Pendente envio</Text>
+                      <Ionicons
+                        name="cloud-upload-outline"
+                        size={11}
+                        color="#92400e"
+                      />
+                      <Text style={styles.chipPendenteText}>
+                        Pendente envio
+                      </Text>
                     </View>
                   ) : null}
                 </View>
@@ -138,11 +152,19 @@ export default function ClientesScreen() {
                     ? ` • ${tpPessoaLabel(item.tp_pessoa)}`
                     : ''}
                 </Text>
-                {enderecoLine ? <Text style={styles.sub}>{enderecoLine}</Text> : null}
-                {cidadeLine ? <Text style={styles.sub}>{cidadeLine}</Text> : null}
-                {item.celular ? <Text style={styles.sub}>📱 {item.celular}</Text> : null}
+                {enderecoLine ? (
+                  <Text style={styles.sub}>{enderecoLine}</Text>
+                ) : null}
+                {cidadeLine ? (
+                  <Text style={styles.sub}>{cidadeLine}</Text>
+                ) : null}
+                {item.celular ? (
+                  <Text style={styles.sub}>📱 {item.celular}</Text>
+                ) : null}
                 <ClienteAtrasoInfo
-                  resumo={atrasoMap.get(`${item.cd_cliente}-${item.holding_id}`)}
+                  resumo={atrasoMap.get(
+                    `${item.cd_cliente}-${item.holding_id}`,
+                  )}
                 />
               </Pressable>
             );

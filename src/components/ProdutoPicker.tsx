@@ -33,6 +33,7 @@ interface Props {
   cdCliente?: number | null;
   holdingId?: number | null;
   mostrarUltimaCompra?: boolean;
+  cdTabelaPreco?: number | null;
 }
 
 interface HistoricoCliente {
@@ -53,6 +54,7 @@ export function ProdutoPicker({
   cdCliente,
   holdingId,
   mostrarUltimaCompra = true,
+  cdTabelaPreco,
 }: Props) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ProdutoRow[]>([]);
@@ -69,10 +71,16 @@ export function ProdutoPicker({
     clienteKey != null && historico?.key === clienteKey
       ? historico.ultimasVendas
       : EMPTY_HISTORY;
-  const historicoCarregado = clienteKey == null || historico?.key === clienteKey;
+  const historicoCarregado =
+    clienteKey == null || historico?.key === clienteKey;
 
   useEffect(() => {
-    if (!visible || clienteKey == null || cdCliente == null || holdingId == null) {
+    if (
+      !visible ||
+      clienteKey == null ||
+      cdCliente == null ||
+      holdingId == null
+    ) {
       return;
     }
 
@@ -83,7 +91,8 @@ export function ProdutoPicker({
       })
       .catch((err) => {
         console.warn('ProdutoPicker: histórico indisponível', err);
-        if (alive) setHistorico({ key: clienteKey, ultimasVendas: EMPTY_HISTORY });
+        if (alive)
+          setHistorico({ key: clienteKey, ultimasVendas: EMPTY_HISTORY });
       });
 
     return () => {
@@ -104,15 +113,23 @@ export function ProdutoPicker({
     let alive = true;
     const t = setTimeout(async () => {
       try {
-        const rows = somenteVendidos && holdingId != null
-          ? await listProdutosVendidos(
-              Array.from(historicoAtual.keys()),
-              holdingId,
-              search,
-              100,
-              true,
-            )
-          : await listProdutos(search, 100, holdingId ?? undefined, true);
+        const rows =
+          somenteVendidos && holdingId != null
+            ? await listProdutosVendidos(
+                Array.from(historicoAtual.keys()),
+                holdingId,
+                search,
+                100,
+                true,
+                cdTabelaPreco,
+              )
+            : await listProdutos(
+                search,
+                100,
+                holdingId ?? undefined,
+                true,
+                cdTabelaPreco,
+              );
         if (alive) setItems(rows);
       } catch (err) {
         console.warn('ProdutoPicker: falha ao listar produtos', err);
@@ -129,6 +146,7 @@ export function ProdutoPicker({
     holdingId,
     search,
     somenteVendidos,
+    cdTabelaPreco,
     visible,
   ]);
 
@@ -136,7 +154,7 @@ export function ProdutoPicker({
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-            <View style={styles.header}>
+          <View style={styles.header}>
             <Text style={styles.title}>Selecione o produto</Text>
             <Pressable onPress={onClose} hitSlop={10}>
               <Text style={styles.close}>Fechar</Text>
@@ -209,8 +227,10 @@ export function ProdutoPicker({
                     <Text style={styles.code}>#{item.cd_produto}</Text>
                     <Text style={styles.name}>{item.descricao}</Text>
                     <Text style={styles.sub}>
-                      Ref: {item.referencia || '—'} • Estoque:{' '}
-                      {item.qt_disponivel ?? 0}
+                      Ref: {item.referencia || '—'}
+                    </Text>
+                    <Text style={styles.stock}>
+                      Estoque: {item.qt_disponivel ?? 0}
                     </Text>
                     <Text style={styles.price}>
                       {fmtMoney(item.vl_venda ?? 0)}
@@ -249,7 +269,12 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontWeight: '700', fontSize: 16 },
   close: { color: '#fff', fontWeight: '600' },
   searchBox: { padding: 12, gap: 10 },
-  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    padding: 10,
+  },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -263,6 +288,7 @@ const styles = StyleSheet.create({
   code: { color: '#1e3a8a', fontSize: 11, fontWeight: '700' },
   name: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
   sub: { color: '#64748b', fontSize: 12, marginTop: 2 },
+  stock: { color: '#334155', fontSize: 16, fontWeight: '700', marginTop: 2 },
   price: { color: '#16a34a', fontWeight: '700', marginTop: 2 },
   lastPrice: {
     color: '#1e3a8a',

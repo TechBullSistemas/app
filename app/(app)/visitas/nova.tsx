@@ -86,7 +86,10 @@ export default function NovaVisitaScreen() {
         payload,
       });
 
-      Alert.alert('Visita', 'Visita salva localmente. Envie em "Enviar Informações" quando estiver online.');
+      Alert.alert(
+        'Visita',
+        'Visita salva localmente. Envie em "Enviar Informações" quando estiver online.',
+      );
       router.back();
     } catch (err) {
       console.error(err);
@@ -97,7 +100,10 @@ export default function NovaVisitaScreen() {
   }
 
   return (
-    <KeyboardAwareScreen style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <KeyboardAwareScreen
+      style={styles.container}
+      contentContainerStyle={{ padding: 16, gap: 14 }}
+    >
       <Text style={styles.label}>Cliente</Text>
       <Pressable style={styles.field} onPress={() => setPickerOpen(true)}>
         <Text style={cliente ? styles.value : styles.placeholder}>
@@ -142,10 +148,13 @@ export default function NovaVisitaScreen() {
         onPress={handleSalvar}
         disabled={saving}
       >
-        <Text style={styles.buttonText}>{saving ? 'Salvando...' : 'Salvar Visita'}</Text>
+        <Text style={styles.buttonText}>
+          {saving ? 'Salvando...' : 'Salvar Visita'}
+        </Text>
       </Pressable>
 
       <ClientePicker
+        somenteAtivos
         visible={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onSelect={setCliente}

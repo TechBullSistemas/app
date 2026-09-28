@@ -36,6 +36,11 @@ import {
   type FormaPagamentoOpt,
 } from '@/components/FormaPagamentoPicker';
 import { CondicaoPrecoPicker } from '@/components/CondicaoPrecoPicker';
+import {
+  TipoPedidoPicker,
+  TIPOS_PEDIDO,
+  type TipoPedido,
+} from '@/components/TipoPedidoPicker';
 import { KeyboardAwareScreen } from '@/components/KeyboardAwareScreen';
 import { ClienteRow, getClienteById } from '@/db/repositories/clientes';
 import {
@@ -175,7 +180,8 @@ function ymdToDate(ymd: string): Date | null {
 function maskDateBR(input: string): string {
   const digits = input.replace(/\D/g, '').slice(0, 8);
   let out = digits;
-  if (digits.length >= 5) out = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  if (digits.length >= 5)
+    out = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
   else if (digits.length >= 3) out = `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return out;
 }
@@ -211,6 +217,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [condPickerOpen, setCondPickerOpen] = useState(false);
   const [formaPickerOpen, setFormaPickerOpen] = useState(false);
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
+  const [tipoPedidoOpen, setTipoPedidoOpen] = useState(false);
   // Picker de condição de preço aberto para um produto específico (cdProduto).
   const [condPrecoOpenFor, setCondPrecoOpenFor] = useState<number | null>(null);
   // Foto expandida do item da venda (cdProduto), aberta pela miniatura.
@@ -259,6 +266,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
   const [obs, setObs] = useState('');
   const [dsOrdemCompra, setDsOrdemCompra] = useState('');
+  const [tipoPedido, setTipoPedido] = useState<TipoPedido>(TIPOS_PEDIDO[0]);
+  const [mostrarFlex, setMostrarFlex] = useState(false);
 
   const [condicaoSel, setCondicaoSel] = useState<CondicaoOpt | null>(null);
   const [formaPagamentoSel, setFormaPagamentoSel] =
@@ -451,7 +460,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       setTabelaPrecoDesc(null);
       return;
     }
-    if (tabelaPrecoManual && tabelaPrecoManual.cd_tabela === cdTabelaPrecoResolvida) {
+    if (
+      tabelaPrecoManual &&
+      tabelaPrecoManual.cd_tabela === cdTabelaPrecoResolvida
+    ) {
       setTabelaPrecoDesc(tabelaPrecoManual.descricao);
       return;
     }
@@ -483,11 +495,18 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     empresaParams?.holdingId === user?.holdingId &&
     empresaParams?.cdEmpresa === user?.cdEmpresa &&
     empresaParams?.idMostraIncrementoValorApp === true;
-  const mostrarUltimaCompra =
-    empresaParams?.idMostraUltimaCompraApp !== false;
+  const mostrarUltimaCompra = empresaParams?.idMostraUltimaCompraApp !== false;
+  const novosItensInicio = empresaParams?.idNovosItensInicioApp === true;
+  const ocultarSaldoFlex = empresaParams?.idOcultaSaldoFlexApp === true;
+  const mostrarOrdemCompra = empresaParams?.idMostraOrdemCompraApp !== false;
+  const usarTipoPedido = empresaParams?.idUsaTipoPedidoApp === true;
   const passoValor = empresaParams?.vlIncrementoValorApp ?? 0.05;
   const precoReadonly = modoAlteracaoPreco === 'N';
   const precoSomenteAumenta = modoAlteracaoPreco === 'A';
+
+  useEffect(() => {
+    if (empresaParams) setMostrarFlex(!ocultarSaldoFlex);
+  }, [empresaParams, ocultarSaldoFlex]);
 
   // Envio automático por e-mail ao salvar novo pedido (não disponível em edição).
   const [enviarEmailAoSalvar, setEnviarEmailAoSalvar] = useState(false);
@@ -544,6 +563,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         const display = payload.__display || {};
         setObs(display.observacao || payload.obs || '');
         setDsOrdemCompra(display.dsOrdemCompra || payload.dsOrdemCompra || '');
+        const idTipoPedido = Number(
+          display.idTipoPedido ?? payload.idTipoPedido ?? 1,
+        );
+        setTipoPedido(
+          TIPOS_PEDIDO.find((tipo) => tipo.id === idTipoPedido) ??
+            TIPOS_PEDIDO[0],
+        );
 
         // Carregar itens enriquecidos com estoque atual
         const rawItens: any[] = display.itens?.length
@@ -557,8 +583,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                 it.vlPrecoOriginal == null
                   ? undefined
                   : Number(it.vlPrecoOriginal),
-              vlTotal:
-                Number(it.qtProduto || 0) * Number(it.vlUnitario || 0),
+              vlTotal: Number(it.qtProduto || 0) * Number(it.vlUnitario || 0),
             }));
 
         const ultimasVendas = await getUltimasVendasCliente(
@@ -581,7 +606,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           const vl = Number(it.vlUnitario) || 0;
           itensCarregados.push({
             cdProduto: Number(it.cdProduto),
-            descricao: it.descricao || prod?.descricao || `Produto #${it.cdProduto}`,
+            descricao:
+              it.descricao || prod?.descricao || `Produto #${it.cdProduto}`,
             qt: snapQtToFator(Number(it.qt) || 0, fator),
             vlUnitario: vl,
             vlUnitarioOriginal:
@@ -782,7 +808,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             qt: it.qt,
             contexto,
             vlUnitarioManual:
-              it.vlUnitario !== it.vlUnitarioOriginal ? it.vlUnitario : undefined,
+              it.vlUnitario !== it.vlUnitarioOriginal
+                ? it.vlUnitario
+                : undefined,
             holdingId: user.holdingId,
           });
           novos.push({ cdProduto: it.cdProduto, pricing: resultado });
@@ -990,9 +1018,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         raw = null;
       }
       const vl = p.vl_venda ?? 0;
-      setItens((prev) => [
-        ...prev,
-        {
+      setItens((prev) => {
+        const novo: ItemPedido = {
           cdProduto: p.cd_produto,
           descricao: p.descricao ?? `Produto ${p.cd_produto}`,
           qt: passo,
@@ -1004,8 +1031,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           fatorVenda: fator,
           fotoUri: p.foto_local || p.foto_url || null,
           rawProduto: raw,
-        },
-      ]);
+        };
+        return novosItensInicio ? [novo, ...prev] : [...prev, novo];
+      });
     }
   }
 
@@ -1212,9 +1240,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       // (`calcularItem`) consiga resolver alíquotas/imposto_uf antes da
       // fórmula. Sem isso o `v_pr_icms_saida` ficaria 0 (caso real
       // observado: lookup de imposto_uf nunca acontecia neste caminho).
-      const raw = rawOverride
-        ?? itens.find((i) => i.cdProduto === cdProduto)?.rawProduto
-        ?? null;
+      const raw =
+        rawOverride ??
+        itens.find((i) => i.cdProduto === cdProduto)?.rawProduto ??
+        null;
       const produtoEng = {
         cdProduto,
         dsProduto: raw?.dsProduto ?? `Produto ${cdProduto}`,
@@ -1351,7 +1380,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     if (calculandoCondicoes) return;
     if (!user) return;
     if (!cliente) return Alert.alert('Atenção', 'Selecione o cliente.');
-    if (!itens.length) return Alert.alert('Atenção', 'Adicione pelo menos um item.');
+    if (!itens.length)
+      return Alert.alert('Atenção', 'Adicione pelo menos um item.');
 
     const itensNorm = itens.map((it) => ({
       ...it,
@@ -1528,6 +1558,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         dsOrdemCompra: dsOrdemCompra.trim()
           ? dsOrdemCompra.trim().slice(0, 65)
           : undefined,
+        idTipoPedido: usarTipoPedido ? tipoPedido.id : undefined,
         vlBruto: vlBrutoSalvar,
         prAcrescimo,
         vlAcrescimoTotal,
@@ -1557,6 +1588,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         dsOrdemCompra: dsOrdemCompra.trim()
           ? dsOrdemCompra.trim().slice(0, 65)
           : null,
+        idTipoPedido: usarTipoPedido ? tipoPedido.id : null,
         itens: itensNorm.map((it) => ({
           cdProduto: it.cdProduto,
           descricao: it.descricao,
@@ -1716,9 +1748,26 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         </View>
       </Pressable>
 
+      {usarTipoPedido && (
+        <>
+          <Text style={styles.label}>Tipo do pedido</Text>
+          <Pressable
+            style={styles.field}
+            onPress={() => setTipoPedidoOpen(true)}
+          >
+            <Text style={styles.value}>
+              {tipoPedido.id} • {tipoPedido.descricao}
+            </Text>
+          </Pressable>
+        </>
+      )}
+
       <View style={styles.itensHeader}>
         <Text style={styles.label}>Itens ({itens.length})</Text>
-        <Pressable style={styles.addBtn} onPress={() => setProdPickerOpen(true)}>
+        <Pressable
+          style={styles.addBtn}
+          onPress={() => setProdPickerOpen(true)}
+        >
           <Ionicons name="add" size={18} color="#fff" />
           <Text style={styles.addBtnText}>Adicionar</Text>
         </Pressable>
@@ -1747,7 +1796,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     {it.descricao} ({it.cdProduto})
                   </Text>
                   {it.qtDisponivel != null && (
-                    <Text style={styles.subtle}>
+                    <Text style={styles.stockText}>
                       Estoque: {it.qtDisponivel}
                       {it.permiteSaldoNegativo ? ' (permite negativo)' : ''}
                     </Text>
@@ -1790,7 +1839,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     <TextInput
                       style={styles.qtdInput}
                       keyboardType="decimal-pad"
-                      value={it.qtInput ?? formatQtDisplay(it.qt, it.fatorVenda)}
+                      value={
+                        it.qtInput ?? formatQtDisplay(it.qt, it.fatorVenda)
+                      }
                       onChangeText={(t) =>
                         alterarQtd(
                           it.cdProduto,
@@ -1825,7 +1876,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                   }
                 >
                   <Text style={styles.itemLbl}>
-                    Vl. unit.{precoBloqueado || precoSomenteAumenta ? ' 🔒' : ''}
+                    Vl. unit.
+                    {precoBloqueado || precoSomenteAumenta ? ' 🔒' : ''}
                   </Text>
                   <PrecoUnitarioInput
                     mostrarBotoes={mostrarIncrementoValor}
@@ -1891,7 +1943,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                 <Text style={styles.condicaoPrecoTxt}>
                   {it.cdCondicaoPreco
                     ? `Cond. preço #${it.cdCondicaoPreco}${
-                        it.condicaoPrecoLabel ? ` • ${it.condicaoPrecoLabel}` : ''
+                        it.condicaoPrecoLabel
+                          ? ` • ${it.condicaoPrecoLabel}`
+                          : ''
                       }${
                         it.vlMinimo != null
                           ? ` • ${precoSomenteAumenta ? 'mín ' : ''}${fmtMoney(it.vlMinimo)}`
@@ -1964,7 +2018,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
 
       {parcelas.length > 0 && (
         <View style={styles.card}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <View
+            style={{ flexDirection: 'row', justifyContent: 'space-between' }}
+          >
             <Text style={styles.label}>Parcelas</Text>
             {parcelasManuais && (
               <Pressable onPress={regenerarParcelas} hitSlop={10}>
@@ -2046,7 +2102,9 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                     );
                     setParcelas((prev) =>
                       prev.map((x) =>
-                        x.numero === p.numero ? { ...x, valorInput: undefined } : x,
+                        x.numero === p.numero
+                          ? { ...x, valorInput: undefined }
+                          : x,
                       ),
                     );
                   }}
@@ -2056,20 +2114,25 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
             </View>
           ))}
           <Text style={styles.subtle}>
-            A soma das parcelas é recalculada automaticamente para fechar o total.
+            A soma das parcelas é recalculada automaticamente para fechar o
+            total.
           </Text>
         </View>
       )}
 
-      <Text style={styles.label}>Ordem de compra</Text>
-      <TextInput
-        style={styles.input}
-        value={dsOrdemCompra}
-        onChangeText={(t) => setDsOrdemCompra(t.slice(0, 65))}
-        maxLength={65}
-        placeholder="Nº ordem de compra do cliente"
-        autoCapitalize="characters"
-      />
+      {mostrarOrdemCompra && (
+        <>
+          <Text style={styles.label}>Ordem de compra</Text>
+          <TextInput
+            style={styles.input}
+            value={dsOrdemCompra}
+            onChangeText={(t) => setDsOrdemCompra(t.slice(0, 65))}
+            maxLength={65}
+            placeholder="Nº ordem de compra do cliente"
+            autoCapitalize="characters"
+          />
+        </>
+      )}
 
       <Text style={styles.label}>Observação</Text>
       <TextInput
@@ -2112,7 +2175,23 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           </Text>
         </View>
       )}
-      {usaFlex && (
+      {usaFlex && ocultarSaldoFlex && (
+        <Pressable
+          style={styles.flexToggle}
+          onPress={() => setMostrarFlex((atual) => !atual)}
+          accessibilityRole="button"
+        >
+          <Ionicons
+            name={mostrarFlex ? 'eye-off-outline' : 'eye-outline'}
+            size={18}
+            color="#1d4ed8"
+          />
+          <Text style={styles.flexToggleText}>
+            {mostrarFlex ? 'Ocultar Flex' : 'Mostrar Flex'}
+          </Text>
+        </Pressable>
+      )}
+      {usaFlex && mostrarFlex && (
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>Flex disponível</Text>
           <Text style={styles.totalValue}>
@@ -2122,7 +2201,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           </Text>
         </View>
       )}
-      {usaFlex && totaisFiscais.totalFlex > 0 && (
+      {usaFlex && mostrarFlex && totaisFiscais.totalFlex > 0 && (
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>Saldo Flex consumido</Text>
           <Text style={styles.totalValue}>
@@ -2184,10 +2263,10 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           {calculandoCondicoes
             ? 'Calculando preços...'
             : salvando
-            ? 'Salvando...'
-            : isEdit
-              ? 'Atualizar Pedido'
-              : 'Salvar Pedido'}
+              ? 'Salvando...'
+              : isEdit
+                ? 'Atualizar Pedido'
+                : 'Salvar Pedido'}
         </Text>
       </Pressable>
 
@@ -2220,6 +2299,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         cdCliente={cliente?.cd_cliente}
         holdingId={user!.holdingId}
         mostrarUltimaCompra={mostrarUltimaCompra}
+        cdTabelaPreco={cdTabelaPrecoResolvida}
+      />
+      <TipoPedidoPicker
+        visible={tipoPedidoOpen}
+        selectedId={tipoPedido.id}
+        onClose={() => setTipoPedidoOpen(false)}
+        onSelect={setTipoPedido}
       />
       <CondicaoPagtoPicker
         visible={condPickerOpen}
@@ -2302,7 +2388,10 @@ function extractFatorVenda(
   if (rawJson) {
     try {
       const parsed = JSON.parse(rawJson);
-      if (parsed?.fatorVenda != null && Number.isFinite(Number(parsed.fatorVenda))) {
+      if (
+        parsed?.fatorVenda != null &&
+        Number.isFinite(Number(parsed.fatorVenda))
+      ) {
         const f = Number(parsed.fatorVenda);
         if (f >= 0) return f;
       }
@@ -2383,6 +2472,12 @@ const styles = StyleSheet.create({
   value: { color: '#0f172a', fontWeight: '600' },
   placeholder: { color: '#94a3b8' },
   subtle: { color: '#64748b', fontSize: 12, marginTop: 2 },
+  stockText: {
+    color: '#334155',
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 4,
+  },
   lastPurchase: {
     color: '#1e3a8a',
     fontSize: 12,
@@ -2510,6 +2605,19 @@ const styles = StyleSheet.create({
   },
   totalLabel: { color: '#cbd5e1', fontWeight: '600' },
   totalValue: { color: '#22c55e', fontWeight: '800', fontSize: 22 },
+  flexToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 8,
+    backgroundColor: '#eff6ff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  flexToggleText: { color: '#1d4ed8', fontWeight: '700' },
   emailCard: {
     backgroundColor: '#fff',
     padding: 14,

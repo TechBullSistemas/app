@@ -27,6 +27,7 @@ import {
 import { useOnlineStore } from '@/stores/online';
 import { enviarVendaPorEmail } from '@/api/email';
 import { extractApiErrorMessage } from '@/api/client';
+import { TIPOS_PEDIDO } from '@/components/TipoPedidoPicker';
 
 interface OutboxRow {
   client_id: string;
@@ -59,6 +60,7 @@ export default function PedidoDetalhe() {
   const [row, setRow] = useState<OutboxRow | null>(null);
   const [pdfData, setPdfData] = useState<PedidoPdfData | null>(null);
   const [dsOrdemCompra, setDsOrdemCompra] = useState<string | null>(null);
+  const [tipoPedido, setTipoPedido] = useState<string | null>(null);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [emailDest, setEmailDest] = useState('');
@@ -123,8 +125,10 @@ export default function PedidoDetalhe() {
     };
     setRow(r);
     setPdfData(data);
-    setDsOrdemCompra(
-      display.dsOrdemCompra || payload.dsOrdemCompra || null,
+    setDsOrdemCompra(display.dsOrdemCompra || payload.dsOrdemCompra || null);
+    const idTipoPedido = Number(display.idTipoPedido ?? payload.idTipoPedido);
+    setTipoPedido(
+      TIPOS_PEDIDO.find((tipo) => tipo.id === idTipoPedido)?.descricao ?? null,
     );
     setEmailDest((prev) => prev || cli?.email || '');
     setLoading(false);
@@ -186,7 +190,10 @@ export default function PedidoDetalhe() {
 
   async function handleEnviarEmailServer() {
     if (!isOnline) {
-      Alert.alert('Sem conexão', 'É necessário estar online para enviar e-mail.');
+      Alert.alert(
+        'Sem conexão',
+        'É necessário estar online para enviar e-mail.',
+      );
       return;
     }
     if (!emailDest || !emailDest.includes('@')) {
@@ -220,7 +227,10 @@ export default function PedidoDetalhe() {
     if (!uri) return;
     const can = await MailComposer.isAvailableAsync();
     if (!can) {
-      Alert.alert('E-mail', 'Nenhum aplicativo de e-mail disponível neste dispositivo.');
+      Alert.alert(
+        'E-mail',
+        'Nenhum aplicativo de e-mail disponível neste dispositivo.',
+      );
       return;
     }
     await MailComposer.composeAsync({
@@ -234,10 +244,14 @@ export default function PedidoDetalhe() {
   }
 
   if (loading) return <ActivityIndicator style={{ marginTop: 24 }} />;
-  if (!row || !pdfData) return <Text style={{ padding: 16 }}>Pedido não encontrado.</Text>;
+  if (!row || !pdfData)
+    return <Text style={{ padding: 16 }}>Pedido não encontrado.</Text>;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ padding: 16, gap: 14 }}
+    >
       <View style={styles.card}>
         <Text style={styles.title}>Pedido #{pdfData.numero}</Text>
         <Text style={styles.subtle}>{pdfData.data}</Text>
@@ -308,6 +322,13 @@ export default function PedidoDetalhe() {
         </View>
       ) : null}
 
+      {tipoPedido ? (
+        <View style={styles.card}>
+          <Text style={styles.section}>Tipo do pedido</Text>
+          <Text style={styles.value}>{tipoPedido}</Text>
+        </View>
+      ) : null}
+
       {pdfData.observacao ? (
         <View style={styles.card}>
           <Text style={styles.section}>Observação</Text>
@@ -318,11 +339,23 @@ export default function PedidoDetalhe() {
       <View style={styles.card}>
         <Text style={styles.section}>Ações</Text>
         <View style={styles.buttonsRow}>
-          <ActionButton icon="print" label="Imprimir" color="#0ea5e9" onPress={handleImprimir} />
-          <ActionButton icon="share-social" label="Compartilhar" color="#10b981" onPress={handleCompartilhar} />
+          <ActionButton
+            icon="print"
+            label="Imprimir"
+            color="#0ea5e9"
+            onPress={handleImprimir}
+          />
+          <ActionButton
+            icon="share-social"
+            label="Compartilhar"
+            color="#10b981"
+            onPress={handleCompartilhar}
+          />
         </View>
 
-        <Text style={[styles.subtle, { marginTop: 12 }]}>Enviar por e-mail (somente online)</Text>
+        <Text style={[styles.subtle, { marginTop: 12 }]}>
+          Enviar por e-mail (somente online)
+        </Text>
         <TextInput
           style={styles.input}
           value={emailDest}
@@ -347,7 +380,9 @@ export default function PedidoDetalhe() {
           />
         </View>
         {!isOnline && (
-          <Text style={styles.warn}>Você está offline. Conecte-se para enviar pelo servidor.</Text>
+          <Text style={styles.warn}>
+            Você está offline. Conecte-se para enviar pelo servidor.
+          </Text>
         )}
       </View>
     </ScrollView>
@@ -369,7 +404,11 @@ function ActionButton({
 }) {
   return (
     <Pressable
-      style={[styles.button, { backgroundColor: color }, disabled && { opacity: 0.6 }]}
+      style={[
+        styles.button,
+        { backgroundColor: color },
+        disabled && { opacity: 0.6 },
+      ]}
       onPress={onPress}
       disabled={disabled}
     >

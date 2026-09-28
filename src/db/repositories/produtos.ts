@@ -28,7 +28,8 @@ function pickPreco(it: any) {
   const tab = Array.isArray(it.tabelaPrecoItem) ? it.tabelaPrecoItem[0] : null;
   return {
     vlVenda: tab?.vlVenda != null ? Number(tab.vlVenda) : null,
-    vlVendaAtacado: tab?.vlVendaAtacado != null ? Number(tab.vlVendaAtacado) : null,
+    vlVendaAtacado:
+      tab?.vlVendaAtacado != null ? Number(tab.vlVendaAtacado) : null,
     vlPromocao: tab?.vlPromocao != null ? Number(tab.vlPromocao) : null,
   };
 }
@@ -41,7 +42,10 @@ function pickEstoque(it: any) {
   return null;
 }
 
-export async function bulkInsertProdutos(items: any[], holdingIdFallback?: number) {
+export async function bulkInsertProdutos(
+  items: any[],
+  holdingIdFallback?: number,
+) {
   if (!items.length) return;
   const db = await getDb();
   await db.withTransactionAsync(async () => {
@@ -141,36 +145,50 @@ export async function bulkInsertProdutos(items: any[], holdingIdFallback?: numbe
 // Consulta de estoque/venda: traz somente produtos físicos (id_tipo_produto
 // = 'P'). Linhas sem o campo (NULL, ex.: API antiga sem idTipoProduto) passam
 // pelo COALESCE para não sumirem do catálogo.
-const FILTRO_TIPO_PRODUTO = `COALESCE(id_tipo_produto, 'P') = 'P'`;
-
 export async function listProdutos(
   search?: string,
   limit = 100,
   holdingId?: number,
   somenteComPreco = false,
+  cdTabelaPreco?: number | null,
 ): Promise<ProdutoRow[]> {
   const db = await getDb();
-  const precoFilter = somenteComPreco ? ' AND vl_venda > 0' : '';
-  const holdingFilter = holdingId != null ? ' AND holding_id = ?' : '';
+  const tabelaJoin =
+    cdTabelaPreco != null
+      ? `LEFT JOIN tabela_preco_item tpi
+         ON tpi.cd_produto = p.cd_produto
+        AND tpi.holding_id = p.holding_id
+        AND tpi.cd_tabela_preco = ?`
+      : '';
+  const precoExpr =
+    cdTabelaPreco != null ? 'COALESCE(tpi.vl_venda, p.vl_venda)' : 'p.vl_venda';
+  const precoFilter = somenteComPreco ? ` AND ${precoExpr} > 0` : '';
+  const holdingFilter = holdingId != null ? ' AND p.holding_id = ?' : '';
+  const baseParams: (string | number)[] =
+    cdTabelaPreco != null ? [cdTabelaPreco] : [];
   if (search && search.trim()) {
     const like = `%${search.trim()}%`;
     return db.getAllAsync<ProdutoRow>(
-      `SELECT * FROM produto
-       WHERE (CAST(cd_produto AS TEXT) LIKE ? OR descricao LIKE ? OR referencia LIKE ?)
-         AND ${FILTRO_TIPO_PRODUTO}
+      `SELECT p.*, ${precoExpr} AS vl_venda FROM produto p
+       ${tabelaJoin}
+       WHERE (CAST(p.cd_produto AS TEXT) LIKE ? OR p.descricao LIKE ? OR p.referencia LIKE ?)
+         AND COALESCE(p.id_tipo_produto, 'P') = 'P'
          ${holdingFilter} ${precoFilter}
-       ORDER BY cd_produto ASC LIMIT ?`,
+       ORDER BY p.cd_produto ASC LIMIT ?`,
       holdingId != null
-        ? [like, like, like, holdingId, limit]
-        : [like, like, like, limit],
+        ? [...baseParams, like, like, like, holdingId, limit]
+        : [...baseParams, like, like, like, limit],
     );
   }
   return db.getAllAsync<ProdutoRow>(
-    `SELECT * FROM produto
-     WHERE ${FILTRO_TIPO_PRODUTO}
+    `SELECT p.*, ${precoExpr} AS vl_venda FROM produto p
+     ${tabelaJoin}
+     WHERE COALESCE(p.id_tipo_produto, 'P') = 'P'
        ${holdingFilter} ${precoFilter}
-     ORDER BY cd_produto ASC LIMIT ?`,
-    holdingId != null ? [holdingId, limit] : [limit],
+     ORDER BY p.cd_produto ASC LIMIT ?`,
+    holdingId != null
+      ? [...baseParams, holdingId, limit]
+      : [...baseParams, limit],
   );
 }
 
@@ -181,17 +199,31 @@ export async function listProdutosVendidos(
   search?: string,
   limit = 100,
   somenteComPreco = false,
+  cdTabelaPreco?: number | null,
 ): Promise<ProdutoRow[]> {
   if (cdProdutos.length === 0) return [];
 
   const db = await getDb();
-  const params: (string | number)[] = [holdingId, JSON.stringify(cdProdutos)];
+  const params: (string | number)[] =
+    cdTabelaPreco != null
+      ? [cdTabelaPreco, holdingId, JSON.stringify(cdProdutos)]
+      : [holdingId, JSON.stringify(cdProdutos)];
+  const tabelaJoin =
+    cdTabelaPreco != null
+      ? `LEFT JOIN tabela_preco_item tpi
+         ON tpi.cd_produto = p.cd_produto
+        AND tpi.holding_id = p.holding_id
+        AND tpi.cd_tabela_preco = ?`
+      : '';
+  const precoExpr =
+    cdTabelaPreco != null ? 'COALESCE(tpi.vl_venda, p.vl_venda)' : 'p.vl_venda';
   let sql = `
-    SELECT p.*
+    SELECT p.*, ${precoExpr} AS vl_venda
     FROM produto p
+    ${tabelaJoin}
     WHERE p.holding_id = ?
-      AND ${FILTRO_TIPO_PRODUTO}
-      ${somenteComPreco ? 'AND p.vl_venda > 0' : ''}
+      AND COALESCE(p.id_tipo_produto, 'P') = 'P'
+      ${somenteComPreco ? `AND ${precoExpr} > 0` : ''}
       AND EXISTS (
         SELECT 1
         FROM json_each(?) vendidos
@@ -224,7 +256,10 @@ export async function getProdutoDescricoes(
   if (!unicos.length) return out;
   const db = await getDb();
   const placeholders = unicos.map(() => '?').join(',');
-  const rows = await db.getAllAsync<{ cd_produto: number; descricao: string | null }>(
+  const rows = await db.getAllAsync<{
+    cd_produto: number;
+    descricao: string | null;
+  }>(
     `SELECT cd_produto, descricao FROM produto
      WHERE holding_id = ? AND cd_produto IN (${placeholders})`,
     [holdingId, ...unicos],
@@ -243,7 +278,11 @@ export async function getProdutoById(cdProduto: number, holdingId: number) {
   );
 }
 
-export async function setProdutoFotoLocal(cdProduto: number, holdingId: number, path: string | null) {
+export async function setProdutoFotoLocal(
+  cdProduto: number,
+  holdingId: number,
+  path: string | null,
+) {
   const db = await getDb();
   await db.runAsync(
     'UPDATE produto SET foto_local = ? WHERE cd_produto = ? AND holding_id = ?',
@@ -270,7 +309,10 @@ export async function setProdutoFotoLocal(cdProduto: number, holdingId: number, 
   }
 }
 
-export async function clearProdutoFotoUrl(cdProduto: number, holdingId: number) {
+export async function clearProdutoFotoUrl(
+  cdProduto: number,
+  holdingId: number,
+) {
   const db = await getDb();
   await db.runAsync(
     'UPDATE produto SET foto_url = NULL WHERE cd_produto = ? AND holding_id = ?',
@@ -283,7 +325,9 @@ export type ProdutoFotoPendente = Pick<
   'cd_produto' | 'holding_id' | 'foto_url'
 >;
 
-export async function listProdutosComFotoPendente(): Promise<ProdutoFotoPendente[]> {
+export async function listProdutosComFotoPendente(): Promise<
+  ProdutoFotoPendente[]
+> {
   const db = await getDb();
   return db.getAllAsync<ProdutoFotoPendente>(
     `SELECT cd_produto, holding_id, foto_url
@@ -294,7 +338,10 @@ export async function listProdutosComFotoPendente(): Promise<ProdutoFotoPendente
   );
 }
 
-export function fmtCodigoDescricao(cd: number, descricao: string | null | undefined): string {
+export function fmtCodigoDescricao(
+  cd: number,
+  descricao: string | null | undefined,
+): string {
   const d = descricao?.trim();
   return d ? `${d} (${cd})` : String(cd);
 }
@@ -350,7 +397,13 @@ export async function getProdutoAuxiliarLabels(
     lookupDescricao('unidade', 'cd_unidade', 'descricao', item.cd_unidade, h),
     lookupDescricao('marca', 'cd_marca', 'descricao', item.cd_marca, h),
     lookupDescricao('grupo_produto', 'cd_grupo', 'descricao', item.cd_grupo, h),
-    lookupDescricao('fornecedor', 'cd_fornecedor', 'nome', item.cd_fornecedor, h),
+    lookupDescricao(
+      'fornecedor',
+      'cd_fornecedor',
+      'nome',
+      item.cd_fornecedor,
+      h,
+    ),
     lookupDescricao('cor', 'cd_cor', 'descricao', item.cd_cor, h),
     lookupDescricao('tamanho', 'cd_tamanho', 'descricao', item.cd_tamanho, h),
   ]);

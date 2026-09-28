@@ -40,6 +40,10 @@ export interface EmpresaParametros {
   idMostraIncrementoValorApp: boolean;
   vlIncrementoValorApp: number;
   idMostraUltimaCompraApp: boolean;
+  idNovosItensInicioApp: boolean;
+  idOcultaSaldoFlexApp: boolean;
+  idMostraOrdemCompraApp: boolean;
+  idUsaTipoPedidoApp: boolean;
   idVerificaTambemColunaLiberadoInternet: boolean;
   // Fórmula dinâmica
   dsFuncaoCalculoPrecoVenda: string | null;
@@ -83,6 +87,10 @@ const DEFAULTS: Omit<EmpresaParametros, 'cdEmpresa' | 'holdingId'> = {
   idMostraIncrementoValorApp: false,
   vlIncrementoValorApp: PASSO_VALOR_PADRAO,
   idMostraUltimaCompraApp: true,
+  idNovosItensInicioApp: false,
+  idOcultaSaldoFlexApp: false,
+  idMostraOrdemCompraApp: true,
+  idUsaTipoPedidoApp: false,
   idVerificaTambemColunaLiberadoInternet: false,
   dsFuncaoCalculoPrecoVenda: null,
   dsFuncaoCalculoMargemLucro: null,
@@ -113,18 +121,21 @@ export async function getEmpresaParametros(
   if (!row) {
     return { cdEmpresa, holdingId, ...DEFAULTS };
   }
+  let rawConfig: Record<string, unknown> = {};
+  try {
+    rawConfig = JSON.parse(row.raw_json || '{}');
+  } catch {
+    rawConfig = {};
+  }
   return {
     cdEmpresa,
     holdingId,
     ...lerIncrementoValor(row.raw_json),
-    idMostraUltimaCompraApp: (() => {
-      try {
-        const raw = JSON.parse(row.raw_json || '{}');
-        return raw.idMostraUltimaCompraApp !== false;
-      } catch {
-        return DEFAULTS.idMostraUltimaCompraApp;
-      }
-    })(),
+    idMostraUltimaCompraApp: rawConfig.idMostraUltimaCompraApp !== false,
+    idNovosItensInicioApp: rawConfig.idNovosItensInicioApp === true,
+    idOcultaSaldoFlexApp: rawConfig.idOcultaSaldoFlexApp === true,
+    idMostraOrdemCompraApp: rawConfig.idMostraOrdemCompraApp !== false,
+    idUsaTipoPedidoApp: rawConfig.idUsaTipoPedidoApp === true,
     cdEstado: s(row.cd_estado, null),
     cdTabelaPrecoPadrao:
       row.cd_tabela_preco_padrao != null
