@@ -224,7 +224,7 @@ test('produto sem URL continua no catálogo e recupera foto do cache quando volt
   }
 });
 
-test('cliente 300851 escolhe condição resolvida 13 e motor calcula 8,03 sobre tabela 7,30', async () => {
+test('cliente 300851 vê 6,27 no catálogo e na venda para tabela 5,70 com condição 13', async () => {
   const { sqlite, db, fromSrc } = harness();
   try {
     await fromSrc('db/migrations.ts').runMigrations(db);
@@ -274,12 +274,12 @@ test('cliente 300851 escolhe condição resolvida 13 e motor calcula 8,03 sobre 
         cdTabelaPreco: 6,
         condicaoPreco: condicao,
       },
-      precoTabela: { vlVenda: 7.3 },
+      precoTabela: { vlVenda: 5.7 },
       qt: 1,
-      cdProduto: 4,
+      cdProduto: 6,
       holdingId: 28,
     });
-    assert.equal(result.vlUnitario, 8.03);
+    assert.equal(result.vlUnitario, 6.27);
     assert.equal(result.trace.cdCondicaoPreco, 13);
   } finally {
     sqlite.close();

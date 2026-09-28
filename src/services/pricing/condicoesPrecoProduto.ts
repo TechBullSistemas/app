@@ -36,8 +36,25 @@ export async function listarCondicoesPrecoProduto(params: {
   precoTabela: TabelaPrecoItemEngine | null;
   qt: number;
   holdingId: number;
+  cdCondicaoPrecoPadrao?: number | null;
+  apenasPadrao?: boolean;
 }): Promise<CondicaoPrecoOpt[]> {
-  const condicoes = await listCondicoesPreco(params.holdingId);
+  const todasCondicoes = await listCondicoesPreco(params.holdingId);
+  const condicaoPadrao =
+    todasCondicoes.find(
+      (condicao) => condicao.cd_condicao_preco === params.cdCondicaoPrecoPadrao,
+    ) ??
+    todasCondicoes.find(
+      (condicao) =>
+        !isCondicaoPrecoPromocao(condicao.id_promocao) &&
+        !(Number(condicao.id_ultima_venda ?? 0) > 0),
+    ) ??
+    todasCondicoes[0];
+  const condicoes = params.apenasPadrao
+    ? condicaoPadrao
+      ? [condicaoPadrao]
+      : []
+    : todasCondicoes;
   const out: CondicaoPrecoOpt[] = [];
   for (const c of condicoes) {
     const cdEng: CondicaoPrecoEngine = {

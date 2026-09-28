@@ -3,7 +3,7 @@ import { incrementarValor } from '@/services/pricing/incrementoValor';
 import { refreshFlex } from '@/sync/flex';
 import { useSyncStore } from '@/stores/sync';
 import { getFlexLocal } from '@/db/repositories/flex';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -231,6 +231,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   const [condicoesPrecoCache, setCondicoesPrecoCache] = useState<
     Record<string, CondicaoPrecoOpt[]>
   >({});
+  const condicoesPrecoCacheRef = useRef<Record<string, CondicaoPrecoOpt[]>>({});
   // Override manual da tabela de preço (somente quando empresa permite).
   const [tabelaPrecoManual, setTabelaPrecoManual] =
     useState<TabelaPrecoOpt | null>(null);
@@ -1191,12 +1192,15 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     cdProduto: number,
     qt: number,
     rawOverride?: any,
+    apenasPadrao = false,
   ) {
     if (!user || !empresaParams || !cdTabelaPrecoResolvida) return [];
     const cacheKey =
       `${cdProduto}|${qt}|${cdTabelaPrecoResolvida}` +
-      `|${condicaoSel?.cd_condicao ?? ''}|${cliente?.cd_cliente ?? ''}`;
-    if (condicoesPrecoCache[cacheKey]) return condicoesPrecoCache[cacheKey];
+      `|${condicaoSel?.cd_condicao ?? ''}|${cliente?.cd_cliente ?? ''}` +
+      `|${apenasPadrao ? 'padrao' : 'todas'}`;
+    if (condicoesPrecoCacheRef.current[cacheKey])
+      return condicoesPrecoCacheRef.current[cacheKey];
     try {
       const tpi = await findTabelaPrecoItem(
         cdTabelaPrecoResolvida,
@@ -1282,8 +1286,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         precoTabela,
         qt: Math.max(qt, 1),
         holdingId: user.holdingId,
+        cdCondicaoPrecoPadrao: cliente?.cd_condicao_preco_padrao,
+        apenasPadrao,
       });
-      setCondicoesPrecoCache((prev) => ({ ...prev, [cacheKey]: opts }));
+      condicoesPrecoCacheRef.current = {
+        ...condicoesPrecoCacheRef.current,
+        [cacheKey]: opts,
+      };
+      setCondicoesPrecoCache(condicoesPrecoCacheRef.current);
       return opts;
     } catch (err) {
       console.warn('Falha ao carregar condições de preço:', err);
@@ -1305,6 +1315,43 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
       vlInput: undefined,
     };
   }
+
+  const resolverPrecoProdutoPicker = useCallback(
+    async (produto: ProdutoRow): Promise<number | null> => {
+      let raw: any = null;
+      try {
+        raw = produto.raw_json ? JSON.parse(produto.raw_json) : null;
+      } catch {
+        raw = null;
+      }
+      const qt = passoIncrementoQtd(
+        extractFatorVenda(produto.fator_venda, produto.raw_json),
+      );
+      const opcoes = await carregarCondicoesPreco(
+        produto.cd_produto,
+        qt,
+        raw,
+        true,
+      );
+      const padrao = escolherCondicaoPrecoPadrao(
+        opcoes,
+        cliente?.cd_condicao_preco_padrao,
+      );
+      return padrao?.vlValor ?? produto.vl_venda;
+    },
+    // O cache interno não entra nas dependências para não reiniciar a lista a
+    // cada preço calculado. O contexto comercial abaixo invalida o cálculo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      cdTabelaPrecoResolvida,
+      cliente?.cd_cliente,
+      cliente?.cd_condicao_preco_padrao,
+      condicaoSel?.cd_condicao,
+      empresaParams,
+      representanteEngine,
+      user,
+    ],
+  );
 
   function selecionarCondicaoPreco(cdProduto: number, opt: CondicaoPrecoOpt) {
     setItens((prev) =>
@@ -2300,6 +2347,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         holdingId={user!.holdingId}
         mostrarUltimaCompra={mostrarUltimaCompra}
         cdTabelaPreco={cdTabelaPrecoResolvida}
+        resolvePreco={resolverPrecoProdutoPicker}
       />
       <TipoPedidoPicker
         visible={tipoPedidoOpen}

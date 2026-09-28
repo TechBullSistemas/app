@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   Modal,
@@ -34,6 +35,7 @@ interface Props {
   holdingId?: number | null;
   mostrarUltimaCompra?: boolean;
   cdTabelaPreco?: number | null;
+  resolvePreco?: (produto: ProdutoRow) => Promise<number | null>;
 }
 
 interface HistoricoCliente {
@@ -55,6 +57,7 @@ export function ProdutoPicker({
   holdingId,
   mostrarUltimaCompra = true,
   cdTabelaPreco,
+  resolvePreco,
 }: Props) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<ProdutoRow[]>([]);
@@ -64,6 +67,7 @@ export function ProdutoPicker({
     uri: string;
     descricao: string | null;
   } | null>(null);
+  const [calculandoPrecos, setCalculandoPrecos] = useState(false);
 
   const clienteKey =
     cdCliente != null && holdingId != null ? `${cdCliente}|${holdingId}` : null;
@@ -108,9 +112,12 @@ export function ProdutoPicker({
     if (!visible) return;
     if (somenteVendidos && !historicoCarregado) {
       setItems([]);
+      setCalculandoPrecos(false);
       return;
     }
     let alive = true;
+    setItems([]);
+    setCalculandoPrecos(true);
     const t = setTimeout(async () => {
       try {
         const rows =
@@ -130,10 +137,22 @@ export function ProdutoPicker({
                 true,
                 cdTabelaPreco,
               );
-        if (alive) setItems(rows);
+        const rowsComPreco = resolvePreco
+          ? await Promise.all(
+              rows.map(async (produto) => {
+                const preco = await resolvePreco(produto);
+                return preco != null && Number.isFinite(preco) && preco > 0
+                  ? { ...produto, vl_venda: preco }
+                  : produto;
+              }),
+            )
+          : rows;
+        if (alive) setItems(rowsComPreco);
       } catch (err) {
         console.warn('ProdutoPicker: falha ao listar produtos', err);
         if (alive) setItems([]);
+      } finally {
+        if (alive) setCalculandoPrecos(false);
       }
     }, 150);
     return () => {
@@ -147,6 +166,7 @@ export function ProdutoPicker({
     search,
     somenteVendidos,
     cdTabelaPreco,
+    resolvePreco,
     visible,
   ]);
 
@@ -187,11 +207,18 @@ export function ProdutoPicker({
             keyExtractor={(it) => `${it.cd_produto}-${it.holding_id}`}
             ItemSeparatorComponent={() => <View style={styles.sep} />}
             ListEmptyComponent={
-              <Text style={styles.empty}>
-                {somenteVendidos
-                  ? 'Nenhum produto vendido para este cliente.'
-                  : 'Nenhum produto encontrado.'}
-              </Text>
+              calculandoPrecos ? (
+                <View style={styles.loadingPrice}>
+                  <ActivityIndicator color="#2563eb" />
+                  <Text style={styles.empty}>Calculando preços...</Text>
+                </View>
+              ) : (
+                <Text style={styles.empty}>
+                  {somenteVendidos
+                    ? 'Nenhum produto vendido para este cliente.'
+                    : 'Nenhum produto encontrado.'}
+                </Text>
+              )
             }
             renderItem={({ item }) => {
               const ultimaVenda = historicoAtual.get(item.cd_produto);
@@ -297,4 +324,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   empty: { color: '#94a3b8', textAlign: 'center', padding: 24 },
+  loadingPrice: { alignItems: 'center', paddingTop: 24 },
 });
