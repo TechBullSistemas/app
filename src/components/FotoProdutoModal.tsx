@@ -38,7 +38,10 @@ function alertarFalhaCompartilhamento() {
  * lugar (backdrop, imagem ou botão "X").
  */
 export function FotoProdutoModal({ visible, uri, descricao, onClose }: Props) {
-  if (!uri) return null;
+  // Desmonta a instância nativa ao fechar. No Android, reutilizar o mesmo
+  // Modal depois de voltar do seletor de compartilhamento pode impedir uma
+  // nova apresentação, mesmo quando `visible` volta a ser true.
+  if (!visible || !uri) return null;
 
   async function compartilhar() {
     try {
