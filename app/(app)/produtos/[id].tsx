@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
+import { FotoProdutoModal } from '@/components/FotoProdutoModal';
 import { getProdutoById, getProdutoAuxiliarLabels, fmtCodigoDescricao, ProdutoRow } from '@/db/repositories/produtos';
 import { getCdTabelasPermitidas } from '@/db/repositories/usuarioTabelaPreco';
 import {
@@ -56,6 +57,7 @@ export default function ProdutoDetalhe() {
   const [tabelas, setTabelas] = useState<TabelaPrecoItemComDescricao[]>([]);
   const [auxLabels, setAuxLabels] = useState<Awaited<ReturnType<typeof getProdutoAuxiliarLabels>> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fotoExpandida, setFotoExpandida] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -81,7 +83,13 @@ export default function ProdutoDetalhe() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
       {photo ? (
-        <Image source={{ uri: photo }} style={styles.image} resizeMode="contain" />
+        <Pressable
+          onPress={() => setFotoExpandida(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir foto do produto"
+        >
+          <Image source={{ uri: photo }} style={styles.image} resizeMode="contain" />
+        </Pressable>
       ) : null}
 
       <View style={styles.card}>
@@ -180,6 +188,12 @@ export default function ProdutoDetalhe() {
         )}
       </Section>
 
+      <FotoProdutoModal
+        visible={fotoExpandida}
+        uri={photo}
+        descricao={item.descricao}
+        onClose={() => setFotoExpandida(false)}
+      />
     </ScrollView>
   );
 }
