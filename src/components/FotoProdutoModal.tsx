@@ -18,6 +18,21 @@ interface Props {
   onClose: () => void;
 }
 
+const MODAL_DISMISS_DELAY_MS = 350;
+
+function aguardarFechamentoModal() {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, MODAL_DISMISS_DELAY_MS);
+  });
+}
+
+function alertarFalhaCompartilhamento() {
+  Alert.alert(
+    'Compartilhamento',
+    'Não foi possível compartilhar esta foto.',
+  );
+}
+
 /**
  * Visualizador de foto do produto em tela cheia. Fecha ao tocar em qualquer
  * lugar (backdrop, imagem ou botão "X").
@@ -39,15 +54,19 @@ export function FotoProdutoModal({ visible, uri, descricao, onClose }: Props) {
         const destino = `${FileSystem.cacheDirectory}produto-${Date.now()}.jpg`;
         arquivo = (await FileSystem.downloadAsync(uri!, destino)).uri;
       }
-      await Sharing.shareAsync(arquivo, {
+
+      // O seletor nativo não deve ser apresentado sobre o Modal do React
+      // Native. Além disso, algumas opções de compartilhamento no iOS não
+      // encerram a Promise ao serem canceladas. Fechar antes e não bloquear o
+      // fluxo nessa Promise mantém a tela responsiva ao voltar para o app.
+      onClose();
+      await aguardarFechamentoModal();
+      void Sharing.shareAsync(arquivo, {
         dialogTitle: descricao || 'Compartilhar foto do produto',
         mimeType: 'image/jpeg',
-      });
+      }).catch(alertarFalhaCompartilhamento);
     } catch {
-      Alert.alert(
-        'Compartilhamento',
-        'Não foi possível compartilhar esta foto.',
-      );
+      alertarFalhaCompartilhamento();
     }
   }
 
