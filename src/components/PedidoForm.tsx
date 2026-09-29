@@ -84,6 +84,7 @@ import {
 } from '@/services/pricing/descontoMaxUsuario';
 import { findTabelaPrecoItem } from '@/db/repositories/tabelaPrecoItem';
 import { escolherCondicaoPrecoPadrao } from '@/services/pricing/condicaoPrecoPadrao';
+import { condicaoPrecoCacheKey } from '@/services/pricing/condicaoPrecoCache';
 import { getEmpresaParametros } from '@/db/repositories/parametros';
 import { getUltimasVendasCliente } from '@/db/repositories/notas';
 import {
@@ -1320,10 +1321,14 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     apenasPadrao = false,
   ) {
     if (!user || !empresaParams || !cdTabelaPrecoResolvida) return [];
-    const cacheKey =
-      `${cdProduto}|${qt}|${cdTabelaPrecoResolvida}` +
-      `|${condicaoSel?.cd_condicao ?? ''}|${cliente?.cd_cliente ?? ''}` +
-      `|${apenasPadrao ? 'padrao' : 'todas'}`;
+    const cacheKey = condicaoPrecoCacheKey({
+      cdProduto,
+      qt,
+      cdTabelaPreco: cdTabelaPrecoResolvida,
+      cdCondicaoPagto: condicaoSel?.cd_condicao,
+      cdCliente: cliente?.cd_cliente,
+      apenasPadrao,
+    });
     if (condicoesPrecoCacheRef.current[cacheKey])
       return condicoesPrecoCacheRef.current[cacheKey];
     try {
@@ -2541,9 +2546,13 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           if (condPrecoOpenFor == null || !cdTabelaPrecoResolvida) return [];
           const it = itens.find((i) => i.cdProduto === condPrecoOpenFor);
           const qtAtual = it?.qt ?? 1;
-          const k =
-            `${condPrecoOpenFor}|${qtAtual}|${cdTabelaPrecoResolvida}` +
-            `|${condicaoSel?.cd_condicao ?? ''}|${cliente?.cd_cliente ?? ''}`;
+          const k = condicaoPrecoCacheKey({
+            cdProduto: condPrecoOpenFor,
+            qt: qtAtual,
+            cdTabelaPreco: cdTabelaPrecoResolvida,
+            cdCondicaoPagto: condicaoSel?.cd_condicao,
+            cdCliente: cliente?.cd_cliente,
+          });
           return condicoesPrecoCache[k] ?? [];
         })()}
         selectedId={
