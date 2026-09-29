@@ -1,7 +1,8 @@
+import { useEffect } from 'react';
 import {
   Alert,
+  BackHandler,
   Image,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -18,11 +19,11 @@ interface Props {
   onClose: () => void;
 }
 
-const MODAL_DISMISS_DELAY_MS = 350;
+const OVERLAY_HIDE_DELAY_MS = 350;
 
-function aguardarFechamentoModal() {
+function aguardarOcultarVisualizador() {
   return new Promise<void>((resolve) => {
-    setTimeout(resolve, MODAL_DISMISS_DELAY_MS);
+    setTimeout(resolve, OVERLAY_HIDE_DELAY_MS);
   });
 }
 
@@ -38,9 +39,18 @@ function alertarFalhaCompartilhamento() {
  * lugar (backdrop, imagem ou botão "X").
  */
 export function FotoProdutoModal({ visible, uri, descricao, onClose }: Props) {
-  // Desmonta a instância nativa ao fechar. No Android, reutilizar o mesmo
-  // Modal depois de voltar do seletor de compartilhamento pode impedir uma
-  // nova apresentação, mesmo quando `visible` volta a ser true.
+  useEffect(() => {
+    if (!visible) return;
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        onClose();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [onClose, visible]);
+
   if (!visible || !uri) return null;
 
   async function compartilhar() {
@@ -58,12 +68,11 @@ export function FotoProdutoModal({ visible, uri, descricao, onClose }: Props) {
         arquivo = (await FileSystem.downloadAsync(uri!, destino)).uri;
       }
 
-      // O seletor nativo não deve ser apresentado sobre o Modal do React
-      // Native. Além disso, algumas opções de compartilhamento no iOS não
-      // encerram a Promise ao serem canceladas. Fechar antes e não bloquear o
-      // fluxo nessa Promise mantém a tela responsiva ao voltar para o app.
+      // Remove a sobreposição antes de abrir o seletor nativo. Além disso,
+      // algumas opções no iOS não encerram a Promise ao serem canceladas;
+      // não bloquear o fluxo nela mantém a tela responsiva ao voltar.
       onClose();
-      await aguardarFechamentoModal();
+      await aguardarOcultarVisualizador();
       void Sharing.shareAsync(arquivo, {
         dialogTitle: descricao || 'Compartilhar foto do produto',
         mimeType: 'image/jpeg',
@@ -74,12 +83,7 @@ export function FotoProdutoModal({ visible, uri, descricao, onClose }: Props) {
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <View style={styles.overlay}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <View style={styles.actionsRow}>
           <Pressable
@@ -113,11 +117,16 @@ export function FotoProdutoModal({ visible, uri, descricao, onClose }: Props) {
           <View style={styles.captionSpacer} />
         )}
       </Pressable>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1000,
+    elevation: 1000,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.9)',

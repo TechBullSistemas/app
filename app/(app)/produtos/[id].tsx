@@ -81,7 +81,8 @@ export default function ProdutoDetalhe() {
   const photo = item.foto_local || item.foto_url || null;
   const fatorVenda = getFatorVenda(item);
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <View style={styles.screen}>
+      <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
       {photo ? (
         <Pressable
           onPress={() => setFotoExpandida(true)}
@@ -188,17 +189,19 @@ export default function ProdutoDetalhe() {
         )}
       </Section>
 
+      </ScrollView>
       <FotoProdutoModal
         visible={fotoExpandida}
         uri={photo}
         descricao={item.descricao}
         onClose={() => setFotoExpandida(false)}
       />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
   container: { flex: 1, backgroundColor: '#f1f5f9' },
   image: { width: '100%', height: 280, backgroundColor: '#fff', borderRadius: 12 },
   card: { backgroundColor: '#fff', padding: 16, borderRadius: 12, gap: 4 },

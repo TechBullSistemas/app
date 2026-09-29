@@ -1883,10 +1883,11 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
   }
 
   return (
-    <KeyboardAwareScreen
-      style={styles.container}
-      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 80 }}
-    >
+    <View style={styles.screen}>
+      <KeyboardAwareScreen
+        style={styles.container}
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 80 }}
+      >
       <Text style={styles.label}>Cliente</Text>
       <Pressable style={styles.field} onPress={() => setCliPickerOpen(true)}>
         <Text style={cliente ? styles.value : styles.placeholder}>
@@ -2526,20 +2527,6 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         selectedId={cdTabelaPrecoResolvida ?? null}
         holdingId={user!.holdingId}
       />
-      {(() => {
-        const it =
-          fotoExpandidaFor != null
-            ? itens.find((i) => i.cdProduto === fotoExpandidaFor)
-            : null;
-        return (
-          <FotoProdutoModal
-            visible={fotoExpandidaFor != null}
-            uri={it?.fotoUri ?? null}
-            descricao={it?.descricao}
-            onClose={() => setFotoExpandidaFor(null)}
-          />
-        );
-      })()}
       <CondicaoPrecoPicker
         visible={condPrecoOpenFor != null}
         options={(() => {
@@ -2568,7 +2555,22 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
           }
         }}
       />
-    </KeyboardAwareScreen>
+      </KeyboardAwareScreen>
+      {(() => {
+        const it =
+          fotoExpandidaFor != null
+            ? itens.find((i) => i.cdProduto === fotoExpandidaFor)
+            : null;
+        return (
+          <FotoProdutoModal
+            visible={fotoExpandidaFor != null}
+            uri={it?.fotoUri ?? null}
+            descricao={it?.descricao}
+            onClose={() => setFotoExpandidaFor(null)}
+          />
+        );
+      })()}
+    </View>
   );
 }
 
@@ -2653,6 +2655,7 @@ function extractPermiteSaldoNegativo(rawJson?: string | null) {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
   container: { flex: 1, backgroundColor: '#f1f5f9' },
   loadingBox: { padding: 24, alignItems: 'center' },
   label: { fontWeight: '700', color: '#334155' },
