@@ -47,11 +47,26 @@ export interface UploadSyncOptions {
   skipVendaClientIds?: string[];
 }
 
-export async function runUploadSync(
+let runningUpload: Promise<UploadSyncResult> | null = null;
+
+export function runUploadSync(
+  options?: UploadSyncOptions,
+): Promise<UploadSyncResult> {
+  if (runningUpload) return runningUpload;
+  runningUpload = executeUploadSync(options).finally(() => {
+    runningUpload = null;
+  });
+  return runningUpload;
+}
+
+async function executeUploadSync(
   options?: UploadSyncOptions,
 ): Promise<UploadSyncResult> {
   const store = useSyncStore.getState();
   const skipVendas = new Set(options?.skipVendaClientIds ?? []);
+
+  if (store.downloadRunning)
+    throw new Error('Aguarde a importação de informações terminar.');
 
   if (useSessionStore.getState().isSessionExpired()) {
     const msg = 'Sessão expirada. Faça login novamente.';
@@ -64,7 +79,9 @@ export async function runUploadSync(
   let clientesCount = 0;
   let vendasCount = 0;
   let visitasCount = 0;
-  let uploadStarted = false;
+
+  // Bloqueia novos envios antes de qualquer operação assíncrona de preparação.
+  store.startUpload([]);
 
   try {
     try {
@@ -159,8 +176,7 @@ export async function runUploadSync(
       })),
     ];
 
-    store.startUpload(items);
-    uploadStarted = true;
+    store.setUploadItems(items);
 
     if (items.length === 0) {
       return { clientes: 0, vendas: 0, visitas: 0 };
@@ -358,8 +374,6 @@ export async function runUploadSync(
     }
     throw err;
   } finally {
-    if (uploadStarted) {
-      store.finishUpload(!firstError, firstError);
-    }
+    store.finishUpload(!firstError, firstError);
   }
 }

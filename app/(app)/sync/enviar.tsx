@@ -25,8 +25,13 @@ import { getClienteById } from '@/db/repositories/clientes';
 export default function EnviarInformacoesScreen() {
   const isOnline = useOnlineStore((s) => s.isOnline);
   const isSessionExpired = useSessionStore((s) => s.isSessionExpired);
-  const { uploadRunning, uploadItems, uploadError, uploadFinishedAt } =
-    useSyncStore();
+  const {
+    downloadRunning,
+    uploadRunning,
+    uploadItems,
+    uploadError,
+    uploadFinishedAt,
+  } = useSyncStore();
   const [pending, setPending] = useState<UploadItemProgress[]>([]);
   // client_ids de pedidos que o usuário desmarcou (não enviar agora).
   const [desmarcados, setDesmarcados] = useState<Set<string>>(new Set());
@@ -112,6 +117,7 @@ export default function EnviarInformacoesScreen() {
   }, []);
 
   async function handleEnviar() {
+    if (useSyncStore.getState().uploadRunning) return;
     if (!isOnline) {
       Alert.alert('Sem conexão', 'Conecte-se à internet para enviar.');
       return;
@@ -176,9 +182,12 @@ export default function EnviarInformacoesScreen() {
           pendentes.
         </Text>
         <Pressable
-          style={[styles.button, (uploadRunning || !isOnline) && { opacity: 0.6 }]}
+          style={[
+            styles.button,
+            (uploadRunning || downloadRunning || !isOnline) && { opacity: 0.6 },
+          ]}
           onPress={handleEnviar}
-          disabled={uploadRunning || !isOnline}
+          disabled={uploadRunning || downloadRunning || !isOnline}
         >
           <Ionicons name="cloud-upload" size={20} color="#fff" />
           <Text style={styles.buttonText}>

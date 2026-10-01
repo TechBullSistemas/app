@@ -45,6 +45,7 @@ interface SyncState {
   finishDownload: (success: boolean, error?: string | null) => void;
 
   startUpload: (items: UploadItemProgress[]) => void;
+  setUploadItems: (items: UploadItemProgress[]) => void;
   setUploadItem: (clientId: string, patch: Partial<UploadItemProgress>) => void;
   finishUpload: (success: boolean, error?: string | null) => void;
 }
@@ -113,6 +114,7 @@ export const useSyncStore = create<SyncState>((set) => ({
       uploadFinishedAt: null,
       uploadItems: items,
     }),
+  setUploadItems: (uploadItems) => set({ uploadItems }),
   setUploadItem: (clientId, patch) =>
     set((s) => ({
       uploadItems: s.uploadItems.map((it) =>

@@ -59,6 +59,13 @@ src/
 4. **Enviar Informações** (`/sync/enviar`): sobe vendas e visitas para `/api/mobile/upload/*` quando há internet.
 5. PDF da venda gerado localmente (`expo-print`); o botão **Enviar por E-mail** só aparece online (`/api/mobile/email/venda`).
 
+O envio bloqueia o botão desde a preparação da fila. Chamadas simultâneas de
+`runUploadSync` compartilham a mesma execução, sem reenviar pedidos ou sobrescrever
+o resultado com uma segunda tentativa. Durante uma importação, o envio aguarda
+o término da carga. Após falha ou conclusão, uma nova tentativa fica disponível;
+pedidos desmarcados continuam pendentes. A correção é compatível com OTA no runtime
+1.1.3 e preserva os identificadores e os pedidos já salvos.
+
 ## Produtos liberados para internet
 
 O catálogo continua recebendo apenas produtos ativos. Se a configuração da empresa `idVerificaTambemColunaLiberadoInternet` estiver ativa, exige também `idLiberadoInternet`. A API aplica o filtro e o app o confere antes da gravação local. A flag vem do DUAPI; a configuração começa desativada e produtos legados começam liberados.
