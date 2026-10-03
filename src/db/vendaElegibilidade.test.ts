@@ -7,9 +7,9 @@ test("SQLite: ativo, inativo, reativação, preço zerado/negativo/nulo e isolam
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`CREATE TABLE cliente (holding_id INTEGER, cd_cliente INTEGER, id_ativo INTEGER,
     id_bloqueia_venda_cliente_atrasado_app INTEGER DEFAULT 0, dt_primeiro_titulo_aberto TEXT);
-    CREATE TABLE produto (holding_id INTEGER, cd_produto INTEGER, vl_venda REAL);
+    CREATE TABLE produto (holding_id INTEGER, cd_produto INTEGER, vl_venda REAL, cd_produto_duapi TEXT);
     INSERT INTO cliente (holding_id, cd_cliente, id_ativo) VALUES (7, 1, 1), (8, 1, 0), (7, -1, 1);
-    INSERT INTO produto VALUES (7, 10, 10), (8, 10, 0), (7, 11, NULL);`);
+    INSERT INTO produto (holding_id, cd_produto, vl_venda) VALUES (7, 10, 10), (8, 10, 0), (7, 11, NULL);`);
   const db = {
     getFirstAsync: async (sql: string, params: any[]) =>
       sqlite.prepare(sql).get(...params) ?? null,
@@ -58,6 +58,55 @@ test("SQLite: ativo, inativo, reativação, preço zerado/negativo/nulo e isolam
     await assert.rejects(
       validarElegibilidadeVenda(db, 7, 1, [{ cdProduto: 99 }]),
       /sem preço/,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("preço ao salvar aceita a tabela do pedido quando a empresa não tem tabela padrão", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`CREATE TABLE cliente (holding_id INTEGER, cd_cliente INTEGER, id_ativo INTEGER,
+    id_bloqueia_venda_cliente_atrasado_app INTEGER DEFAULT 0, dt_primeiro_titulo_aberto TEXT);
+    CREATE TABLE produto (holding_id INTEGER, cd_produto INTEGER, vl_venda REAL, cd_produto_duapi TEXT);
+    CREATE TABLE tabela_preco_item (cd_tabela_preco INTEGER, cd_produto INTEGER, holding_id INTEGER, vl_venda REAL);
+    INSERT INTO cliente (holding_id, cd_cliente, id_ativo) VALUES (31, 1, 1), (7, 1, 1);
+    -- Empresa sem tabela padrão: o produto chega sem preço próprio.
+    INSERT INTO produto VALUES (31, 16050555, NULL, 'LS046'), (31, 20, 15, NULL), (7, 16050555, NULL, NULL);
+    INSERT INTO tabela_preco_item VALUES (2, 16050555, 31, 32.9), (12, 16050555, 31, 0), (12, 20, 31, 0);`);
+  const db = {
+    getFirstAsync: async (sql: string, params: any[]) =>
+      sqlite.prepare(sql).get(...params) ?? null,
+  } as any;
+  const item = [{ cdProduto: 16050555 }];
+  try {
+    // Preço só na tabela do cliente: a seleção mostra e o pedido salva.
+    await validarElegibilidadeVenda(db, 31, 1, item, 2);
+    // Sem tabela no pedido, na tabela zerada ou em tabela de outra holding.
+    await assert.rejects(
+      validarElegibilidadeVenda(db, 31, 1, item),
+      /Produto #LS046 sem preço de venda válido/,
+    );
+    await assert.rejects(
+      validarElegibilidadeVenda(db, 31, 1, item, null),
+      /sem preço de venda válido/,
+    );
+    await assert.rejects(
+      validarElegibilidadeVenda(db, 31, 1, item, 12),
+      /sem preço de venda válido/,
+    );
+    await assert.rejects(
+      validarElegibilidadeVenda(db, 7, 1, item, 2),
+      /Produto #16050555 sem preço de venda válido/,
+    );
+    // Produto com preço próprio continua aceito em qualquer tabela, como antes.
+    await validarElegibilidadeVenda(db, 31, 1, [{ cdProduto: 20 }], 2);
+    await validarElegibilidadeVenda(db, 31, 1, [{ cdProduto: 20 }], 12);
+    await validarElegibilidadeVenda(db, 31, 1, [{ cdProduto: 20 }]);
+    // Um item sem preço recusa o pedido inteiro.
+    await assert.rejects(
+      validarElegibilidadeVenda(db, 31, 1, [{ cdProduto: 20 }, ...item], 12),
+      /sem preço de venda válido/,
     );
   } finally {
     sqlite.close();

@@ -65,6 +65,7 @@ export async function enqueueVenda(item: {
       item.holdingId,
       item.cdCliente,
       item.payload.prevendaItem,
+      item.payload.cdTabelaPreco,
     );
     await db.runAsync(
       `INSERT OR REPLACE INTO outbox_venda
@@ -169,6 +170,7 @@ export async function updateOutboxVendaPayload(
       existing.holding_id,
       payload.cdCliente,
       payload.prevendaItem,
+      payload.cdTabelaPreco,
     );
     await assertFlexSave(db, user, clientId, payload);
     await db.runAsync(
