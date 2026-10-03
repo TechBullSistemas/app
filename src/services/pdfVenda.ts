@@ -2,6 +2,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getEmpresaById } from '@/db/repositories/empresas';
+import { getProdutoCodigosDuapi } from '@/db/repositories/produtos';
 import { buildHtmlPadrao } from './pdf/padrao';
 import { buildHtmlDetalhado } from './pdf/detalhado';
 import { complementarPedidoPdf, parseJson } from './pdf/dados';
@@ -63,7 +64,25 @@ export async function getEmpresaPedidoPdfData(
   };
 }
 
-export async function gerarPdfPedido(p: PedidoPdfData) {
+/** Troca o código interno pelo código do DUAPI dos produtos que o possuem. */
+async function aplicarCodigosProduto(p: PedidoPdfData): Promise<PedidoPdfData> {
+  if (p.holdingId == null) return p;
+  const codigos = await getProdutoCodigosDuapi(
+    p.itens.map((item) => item.cdProduto),
+    p.holdingId,
+  );
+  if (!codigos.size) return p;
+  return {
+    ...p,
+    itens: p.itens.map((item) => ({
+      ...item,
+      codigo: item.codigo ?? codigos.get(item.cdProduto),
+    })),
+  };
+}
+
+export async function gerarPdfPedido(pedido: PedidoPdfData) {
+  const p = await aplicarCodigosProduto(pedido);
   const current =
     p.cdEmpresa != null && p.holdingId != null
       ? { ...p, ...(await getEmpresaPedidoPdfData(p.cdEmpresa, p.holdingId)) }

@@ -14,9 +14,11 @@ import { findCondicaoPagto } from '@/db/repositories/condicaoPagto';
 import { getClienteById } from '@/db/repositories/clientes';
 import { getDb } from '@/db/database';
 import { fmtCpfCnpj, fmtDate, fmtMoney } from '@/utils/format';
+import { codigoProduto } from '@/utils/codigoProduto';
 
 interface ItemNota {
   cdProduto: number;
+  cdProdutoDuapi: string | null;
   dsProduto: string | null;
   qtProduto: number;
   vlUnitario: number;
@@ -50,6 +52,7 @@ function parseNota(n: NotaFiscalRow): NotaParsed {
   const itens: ItemNota[] = Array.isArray(raw?.notaFiscalSaidaItem)
     ? raw.notaFiscalSaidaItem.map((it: any) => ({
         cdProduto: Number(it.cdProduto),
+        cdProdutoDuapi: it.cdProdutoDuapi ?? null,
         dsProduto: it.dsProduto ?? null,
         qtProduto: num(it.qtProduto),
         vlUnitario: num(it.vlUnitario),
@@ -206,7 +209,7 @@ export default function VendaDetalhe() {
                 {it.dsProduto ?? `Produto ${it.cdProduto}`}
               </Text>
               <Text style={styles.itemSub}>
-                #{it.cdProduto} • {it.qtProduto} {it.dsUnidade ?? 'un'} × {fmtMoney(it.vlUnitario)}
+                #{codigoProduto(it.cdProduto, it.cdProdutoDuapi)} • {it.qtProduto} {it.dsUnidade ?? 'un'} × {fmtMoney(it.vlUnitario)}
               </Text>
               <Text style={styles.itemTotal}>
                 {fmtMoney(it.qtProduto * it.vlUnitario - it.vlDesconto + it.vlAcrescimo)}

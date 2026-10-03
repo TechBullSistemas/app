@@ -1,5 +1,7 @@
 export interface PedidoItem {
   cdProduto: number;
+  /** Código impresso: o do DUAPI quando a empresa usa código de produto texto. */
+  codigo?: string | null;
   descricao: string;
   qt: number;
   vlUnitario: number;

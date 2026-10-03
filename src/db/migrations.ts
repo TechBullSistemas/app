@@ -746,6 +746,9 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     // Fator de venda: quantidade mínima/múltiplo usado como qt inicial e
     // passo de incremento ao adicionar o item no pedido.
     ['fator_venda', 'fator_venda REAL DEFAULT 0'],
+    // Código do DUAPI em empresas com código de produto texto. Preenchido
+    // pelo "Buscar informações"; nulo mantém a exibição do código interno.
+    ['cd_produto_duapi', 'cd_produto_duapi TEXT'],
   ];
   for (const [name, ddl] of produtoCols) {
     await ensureColumn(db, 'produto', name, ddl);

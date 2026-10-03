@@ -39,6 +39,7 @@ import {
 import { listVisitasCliente, VisitaRow } from '@/db/repositories/visitas';
 import { getProdutoById } from '@/db/repositories/produtos';
 import { fmtDate, fmtMoney, fmtQty } from '@/utils/format';
+import { codigoProduto } from '@/utils/codigoProduto';
 
 function fmtCpfCnpj(raw: string | null | undefined) {
   if (!raw) return '';
@@ -337,7 +338,8 @@ export default function ClienteDetalhe() {
                         {p.descricao ?? `Produto ${p.cd_produto}`}
                       </Text>
                       <Text style={styles.linhaItemSub}>
-                        #{p.cd_produto} • Qtd. {fmtQty(p.qt_total)} •{' '}
+                        #{codigoProduto(p.cd_produto, p.cd_produto_duapi)} • Qtd.{' '}
+                        {fmtQty(p.qt_total)} •{' '}
                         {p.vendas_count} venda
                         {p.vendas_count !== 1 ? 's' : ''}
                       </Text>

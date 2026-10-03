@@ -87,7 +87,7 @@ export function paginarPedido(p: PedidoPdfData): Pagina[] {
 
 function itemHtml(item: PedidoItem) {
   return `<tr class="item"><td class="foto">${item.fotoUri?.startsWith('data:image/') ? `<img src="${escape(item.fotoUri)}" />` : '<div class="sem-foto">Sem foto</div>'}</td>
-    <td class="produto"><strong>${escape(item.cdProduto)} - ${escape(item.descricao)}</strong><div>NCM: ${escape(item.ncm || '-')}</div><div>Código de barras: ${escape(item.codigoBarras || '-')}</div></td>
+    <td class="produto"><strong>${escape(item.codigo ?? item.cdProduto)} - ${escape(item.descricao)}</strong><div>NCM: ${escape(item.ncm || '-')}</div><div>Código de barras: ${escape(item.codigoBarras || '-')}</div></td>
     <td class="numero">${number(descontoItem(item))}</td><td class="numero">${number(item.vlUnitario)}</td><td class="numero">${Number(item.qt).toLocaleString('pt-BR', { maximumFractionDigits: 5 })}</td><td class="numero">${number(item.vlTotal)}</td></tr>`;
 }
 

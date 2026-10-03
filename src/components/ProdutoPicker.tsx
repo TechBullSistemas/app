@@ -26,6 +26,7 @@ import {
   type UltimaVendaProdutoCliente,
 } from '@/db/repositories/notas';
 import { FotoProdutoModal } from '@/components/FotoProdutoModal';
+import { codigoProduto } from '@/utils/codigoProduto';
 
 interface Props {
   visible: boolean;
@@ -251,7 +252,9 @@ export function ProdutoPicker({
                     <View style={[styles.thumb, styles.thumbEmpty]} />
                   )}
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.code}>#{item.cd_produto}</Text>
+                    <Text style={styles.code}>
+                      #{codigoProduto(item.cd_produto, item.cd_produto_duapi)}
+                    </Text>
                     <Text style={styles.name}>{item.descricao}</Text>
                     <Text style={styles.sub}>
                       Ref: {item.referencia || '—'}

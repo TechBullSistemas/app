@@ -9,7 +9,7 @@ function rowsItens(itens: PedidoItem[]) {
     .map(
       (it) => `
         <tr>
-          <td>${it.cdProduto}</td>
+          <td>${escape(it.codigo ?? String(it.cdProduto))}</td>
           <td>${escape(it.descricao)}</td>
           <td style="text-align:right;">${it.qt}</td>
           <td style="text-align:right;">${fmtMoney(it.vlUnitario)}</td>

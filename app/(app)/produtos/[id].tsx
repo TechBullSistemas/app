@@ -11,6 +11,7 @@ import {
 } from '@/db/repositories/tabelaPrecoItem';
 import { useSessionStore } from '@/stores/session';
 import { fmtDate, fmtMoney } from '@/utils/format';
+import { codigoProduto } from '@/utils/codigoProduto';
 
 const TIPO_PRODUTO_LABEL: Record<string, string> = {
   P: 'Físico',
@@ -94,7 +95,9 @@ export default function ProdutoDetalhe() {
       ) : null}
 
       <View style={styles.card}>
-        <Text style={styles.code}>#{item.cd_produto}</Text>
+        <Text style={styles.code}>
+          #{codigoProduto(item.cd_produto, item.cd_produto_duapi)}
+        </Text>
         <Text style={styles.title}>{item.descricao}</Text>
         <Text style={styles.subtle}>Ref.: {item.referencia || '—'}</Text>
       </View>

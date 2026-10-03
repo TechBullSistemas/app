@@ -22,7 +22,13 @@ export interface ProdutoRow {
   id_tipo_produto?: string | null;
   fator_venda?: number | null;
   id_liberado_internet?: number;
+  /** Código do DUAPI quando a empresa usa código de produto texto. */
+  cd_produto_duapi?: string | null;
 }
+
+// Produtos com código do DUAPI são encontrados por ele, não pelo interno.
+const BUSCA_CODIGO =
+  'COALESCE(p.cd_produto_duapi, CAST(p.cd_produto AS TEXT)) LIKE ?';
 
 function pickPreco(it: any) {
   const tab = Array.isArray(it.tabelaPrecoItem) ? it.tabelaPrecoItem[0] : null;
@@ -114,7 +120,8 @@ export async function bulkInsertProdutos(
              cd_situacao_tributaria = ?,
              pr_comissao = ?,
              id_tipo_produto = ?,
-             fator_venda = ?
+             fator_venda = ?,
+             cd_produto_duapi = ?
            WHERE cd_produto = ? AND holding_id = ?`,
           [
             it.cdImposto != null ? Number(it.cdImposto) : null,
@@ -129,6 +136,7 @@ export async function bulkInsertProdutos(
             Number(it.prComissao ?? 0),
             it.idTipoProduto != null ? String(it.idTipoProduto) : null,
             Number(it.fatorVenda ?? 0),
+            String(it.cdProdutoDuapi ?? '').trim() || null,
             it.cdProduto,
             holdingId,
           ],
@@ -171,7 +179,7 @@ export async function listProdutos(
     return db.getAllAsync<ProdutoRow>(
       `SELECT p.*, ${precoExpr} AS vl_venda FROM produto p
        ${tabelaJoin}
-       WHERE (CAST(p.cd_produto AS TEXT) LIKE ? OR p.descricao LIKE ? OR p.referencia LIKE ?)
+       WHERE (${BUSCA_CODIGO} OR p.descricao LIKE ? OR p.referencia LIKE ?)
          AND COALESCE(p.id_tipo_produto, 'P') = 'P'
          ${holdingFilter} ${precoFilter}
        ORDER BY p.cd_produto ASC LIMIT ?`,
@@ -232,8 +240,7 @@ export async function listProdutosVendidos(
 
   if (search?.trim()) {
     const like = `%${search.trim()}%`;
-    sql +=
-      ' AND (CAST(p.cd_produto AS TEXT) LIKE ? OR p.descricao LIKE ? OR p.referencia LIKE ?)';
+    sql += ` AND (${BUSCA_CODIGO} OR p.descricao LIKE ? OR p.referencia LIKE ?)`;
     params.push(like, like, like);
   }
 
@@ -267,6 +274,31 @@ export async function getProdutoDescricoes(
   for (const r of rows) {
     if (r.descricao) out.set(r.cd_produto, r.descricao);
   }
+  return out;
+}
+
+/**
+ * Código do DUAPI dos produtos do catálogo local que o possuem. Usado em
+ * listas de itens (pedidos, PDF) que só guardam o código interno.
+ */
+export async function getProdutoCodigosDuapi(
+  cds: number[],
+  holdingId: number,
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const unicos = [...new Set(cds)].filter((cd) => Number.isFinite(cd));
+  if (!unicos.length) return out;
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    cd_produto: number;
+    cd_produto_duapi: string;
+  }>(
+    `SELECT cd_produto, cd_produto_duapi FROM produto
+     WHERE holding_id = ? AND cd_produto_duapi IS NOT NULL
+       AND cd_produto IN (SELECT value FROM json_each(?))`,
+    [holdingId, JSON.stringify(unicos)],
+  );
+  for (const r of rows) out.set(r.cd_produto, r.cd_produto_duapi);
   return out;
 }
 

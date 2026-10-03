@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { listProdutos, ProdutoRow } from '@/db/repositories/produtos';
+import { codigoProduto } from '@/utils/codigoProduto';
 
 function fmtMoney(v: number | null | undefined) {
   if (v == null) return '—';
@@ -80,7 +81,9 @@ export default function ProdutosScreen() {
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.code}>#{item.cd_produto}</Text>
+                <Text style={styles.code}>
+                  #{codigoProduto(item.cd_produto, item.cd_produto_duapi)}
+                </Text>
                 <Text style={styles.name} numberOfLines={2}>
                   {item.descricao ?? '(sem descrição)'}
                 </Text>

@@ -93,6 +93,7 @@ import {
   recalcularParcelasNoTotal,
   redistribuirParcelasAposEdicao,
 } from '@/utils/parcelas';
+import { codigoProduto } from '@/utils/codigoProduto';
 
 // Crediário permanece como fallback quando o cliente ainda não possui uma
 // forma padrão sincronizada do DUAPI.
@@ -1971,7 +1972,12 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.value}>
-                    {it.descricao} ({it.cdProduto})
+                    {it.descricao} (
+                    {codigoProduto(
+                      it.cdProduto,
+                      it.rawProduto?.cdProdutoDuapi,
+                    )}
+                    )
                   </Text>
                   {it.qtDisponivel != null && (
                     <Text style={styles.stockText}>

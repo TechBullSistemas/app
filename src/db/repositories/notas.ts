@@ -323,6 +323,8 @@ export async function listNotasFiltradas(
 
 export interface ProdutoCompradoCliente {
   cd_produto: number;
+  /** Código do DUAPI enviado no item da nota, quando a empresa usa código texto. */
+  cd_produto_duapi?: string | null;
   descricao: string | null;
   qt_total: number;
   vl_total: number;
@@ -372,6 +374,7 @@ export async function listProdutosCompradosCliente(
       const totalLinha = qt * vlUnit - vlDesc + vlAcr;
       const cur = acc.get(cd) ?? {
         cd_produto: cd,
+        cd_produto_duapi: it.cdProdutoDuapi ?? null,
         descricao: it.dsProduto ?? null,
         qt_total: 0,
         vl_total: 0,
