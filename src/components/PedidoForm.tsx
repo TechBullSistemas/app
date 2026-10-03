@@ -509,6 +509,8 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
     empresaParams?.idMostraIncrementoValorApp === true;
   const mostrarUltimaCompra = empresaParams?.idMostraUltimaCompraApp !== false;
   const novosItensInicio = empresaParams?.idNovosItensInicioApp === true;
+  const selecaoPorAgrupador =
+    empresaParams?.idSelecionaProdutoAgrupador === true;
   const ocultarSaldoFlex = empresaParams?.idOcultaSaldoFlexApp === true;
   const mostrarOrdemCompra = empresaParams?.idMostraOrdemCompraApp !== false;
   const usarTipoPedido = empresaParams?.idUsaTipoPedidoApp === true;
@@ -2499,6 +2501,7 @@ export function PedidoForm({ clientId, preCdCliente, preHoldingId }: Props) {
         cdCliente={cliente?.cd_cliente}
         holdingId={user!.holdingId}
         mostrarUltimaCompra={mostrarUltimaCompra}
+        selecaoPorAgrupador={selecaoPorAgrupador}
         cdTabelaPreco={cdTabelaPrecoResolvida}
         resolvePreco={resolverPrecoProdutoPicker}
       />

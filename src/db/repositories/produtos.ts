@@ -24,6 +24,11 @@ export interface ProdutoRow {
   id_liberado_internet?: number;
   /** Código do DUAPI quando a empresa usa código de produto texto. */
   cd_produto_duapi?: string | null;
+  /** Agrupador do DUAPI; vem só com a seleção pelo agrupador ligada. */
+  cd_agrupador?: number | null;
+  ds_agrupador?: string | null;
+  /** JSON de `{ dsCaracteristicaProduto, valor }` (cor, tamanho, sabor). */
+  caracteristicas_json?: string | null;
 }
 
 // Produtos com código do DUAPI são encontrados por ele, não pelo interno.
@@ -146,6 +151,31 @@ export async function bulkInsertProdutos(
         // (ensureColumn em runMigrations garante criação no boot normal.)
         console.warn('bulkInsertProdutos: update fiscal falhou', e);
       }
+
+      // A API só envia o agrupador com a opção da empresa ligada; sem ele o
+      // INSERT acima já deixou as colunas nulas.
+      if (it.cdAgrupador != null) {
+        try {
+          await db.runAsync(
+            `UPDATE produto SET
+               cd_agrupador = ?,
+               ds_agrupador = ?,
+               caracteristicas_json = ?
+             WHERE cd_produto = ? AND holding_id = ?`,
+            [
+              Number(it.cdAgrupador),
+              String(it.dsAgrupador ?? '').trim() || null,
+              Array.isArray(it.caracteristicas) && it.caracteristicas.length
+                ? JSON.stringify(it.caracteristicas)
+                : null,
+              it.cdProduto,
+              holdingId,
+            ],
+          );
+        } catch (e) {
+          console.warn('bulkInsertProdutos: update do agrupador falhou', e);
+        }
+      }
     }
   });
 }
@@ -197,6 +227,39 @@ export async function listProdutos(
     holdingId != null
       ? [...baseParams, holdingId, limit]
       : [...baseParams, limit],
+  );
+}
+
+/**
+ * Produtos do mesmo agrupador, com as mesmas regras de `listProdutos`
+ * (produto físico e, quando pedido, somente com preço).
+ */
+export async function listProdutosDoAgrupador(
+  cdAgrupador: number,
+  holdingId: number,
+  somenteComPreco = false,
+  cdTabelaPreco?: number | null,
+): Promise<ProdutoRow[]> {
+  const db = await getDb();
+  const tabelaJoin =
+    cdTabelaPreco != null
+      ? `LEFT JOIN tabela_preco_item tpi
+         ON tpi.cd_produto = p.cd_produto
+        AND tpi.holding_id = p.holding_id
+        AND tpi.cd_tabela_preco = ?`
+      : '';
+  const precoExpr =
+    cdTabelaPreco != null ? 'COALESCE(tpi.vl_venda, p.vl_venda)' : 'p.vl_venda';
+  return db.getAllAsync<ProdutoRow>(
+    `SELECT p.*, ${precoExpr} AS vl_venda FROM produto p
+     ${tabelaJoin}
+     WHERE p.holding_id = ? AND p.cd_agrupador = ?
+       AND COALESCE(p.id_tipo_produto, 'P') = 'P'
+       ${somenteComPreco ? `AND ${precoExpr} > 0` : ''}
+     ORDER BY p.descricao ASC, p.cd_produto ASC`,
+    cdTabelaPreco != null
+      ? [cdTabelaPreco, holdingId, cdAgrupador]
+      : [holdingId, cdAgrupador],
   );
 }
 

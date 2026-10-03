@@ -749,10 +749,18 @@ export async function runMigrations(db: SQLite.SQLiteDatabase) {
     // Código do DUAPI em empresas com código de produto texto. Preenchido
     // pelo "Buscar informações"; nulo mantém a exibição do código interno.
     ['cd_produto_duapi', 'cd_produto_duapi TEXT'],
+    // Seleção pelo agrupador (opção da empresa). Preenchidos pelo "Buscar
+    // informações" só com a opção ligada; nulos mantêm a seleção atual.
+    ['cd_agrupador', 'cd_agrupador INTEGER'],
+    ['ds_agrupador', 'ds_agrupador TEXT'],
+    ['caracteristicas_json', 'caracteristicas_json TEXT'],
   ];
   for (const [name, ddl] of produtoCols) {
     await ensureColumn(db, 'produto', name, ddl);
   }
+  await db.execAsync(
+    'CREATE INDEX IF NOT EXISTS idx_produto_agrupador ON produto(holding_id, cd_agrupador);',
+  );
 
   // Backfill dos campos novos do produto a partir do raw_json já sincronizado
   // (evita exigir re-sync completo para os dados existentes aparecerem).
